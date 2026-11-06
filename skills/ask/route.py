@@ -174,6 +174,21 @@ def load_roles(path=None):
     return rules
 
 
+def resolve_preset(flag=None, rules=None, env=None, machine=None):
+    """Resolve the active name and source; blank values are unset."""
+    rules = load_roles() if rules is None else rules
+    env = os.environ if env is None else env
+    machine = load_machine() if machine is None else machine
+    known = dict(manual={}, **{k: v for k, v in (rules.get("presets") or {}).items() if k != "manual"})
+    for value, source in ((flag, "flag"), (env.get("ASK_PRESET"), "ASK_PRESET"),
+                          (machine.get("preset"), "machine.json"), ("manual", "default")):
+        name = str(value or "").strip()
+        if name:
+            if name not in known:
+                raise ValueError(f"unknown preset {name!r}; known presets: {', '.join(known)}")
+            return {"preset": name, "source": source}
+
+
 def model_table(rules=None):
     """Keep provider metadata from roles for offline routing."""
     rules = rules or load_roles()
@@ -3471,6 +3486,28 @@ def _pick(role, fake=None, rules=None, exclude=None, allow_never=False, tokens=N
         # Scoring is advisory; restore the entire legacy order on any failure.
         scored = None
         score_fields = {"score_notes": [], "score_pick": None}
+    try:
+        entry = rules["roles"][role]
+        if isinstance(entry, dict) and "score" in entry and not local_only and not entry.get("pinned"):
+            import score
+            rows = _read_journal_rows(journal_path=journal_path, fake=fake)
+            bench = experience.load_benchmarks()
+            picks = {}
+            for name, weights in (rules.get("presets") or {}).items():
+                if name == "manual":
+                    continue
+                ranked_all = []
+                for policy_rank in sorted(set(k[0] for k in keys)):
+                    members = [dict(e, **({"effort": effort} if effort else {}))
+                               for e, key in zip(evaluated, keys) if key[0] == policy_rank]
+                    ranked, _, _ = score.rank(role, members, rules, rows, bench, cs, prompt_tokens, weights=weights)
+                    ranked_all.extend(ranked)
+                calm = [e for e in ranked_all if not e.get("pace_over")]
+                proposed = (calm or ranked_all or [None])[0]
+                picks[name] = proposed["model"] if proposed else None
+            score_fields["preset_picks"] = picks
+    except Exception:
+        pass  # Preset suggestions cannot affect the manual decision.
     if scored is not None and score_fields.get("score_mode") == "live":
         evaluated = scored
         experience_notes, experience_moved = [], set()
@@ -3620,17 +3657,24 @@ def _pick(role, fake=None, rules=None, exclude=None, allow_never=False, tokens=N
 
 def pick(role, fake=None, rules=None, exclude=None, allow_never=False, tokens=None,
          journal_path=None, reservations_path=None, context=None, machine=None, needs=None,
-         prompt_tokens=None, effort=None):
+         prompt_tokens=None, effort=None, preset=None):
+    rules = rules or load_roles()
+    try:
+        active = resolve_preset(preset, rules, machine=machine if machine is not None else load_machine(fake=fake))
+    except ValueError:
+        # The scripts refuse a wrong name before they pick; a direct caller still gets a decision.
+        active = {"preset": "manual", "source": "default"}
     decision = _pick(role, fake=fake, rules=rules, exclude=exclude, allow_never=allow_never, tokens=tokens,
                      journal_path=journal_path, reservations_path=reservations_path, context=context,
                      machine=machine, needs=needs, prompt_tokens=prompt_tokens, effort=effort)
+    decision["preset"] = active["preset"]
     decision.setdefault("score_notes", [])
     decision.setdefault("score_pick", None)
     return decision
 
 
 def wait_until_free(role=None, name=None, max_wait_s=7200, poll_s=30, fake=None, rules=None, stream=None, sleep_fn=None, tokens=None, context=None, needs=None,
-                    exclude=None, allow_never=False, prompt_tokens=None, effort=None):
+                    exclude=None, allow_never=False, prompt_tokens=None, effort=None, preset=None):
     out_stream = stream if stream is not None else sys.stderr
     sleeper = sleep_fn or time.sleep
     started = time.time()
@@ -3640,7 +3684,7 @@ def wait_until_free(role=None, name=None, max_wait_s=7200, poll_s=30, fake=None,
     while True:
         if role:
             res = pick(role, fake=fake, rules=rules, tokens=tokens, context=context, needs=needs, exclude=exclude,
-                       allow_never=allow_never, prompt_tokens=prompt_tokens, effort=effort)
+                       allow_never=allow_never, prompt_tokens=prompt_tokens, effort=effort, preset=preset)
             if res["picked"] or res.get("exit_code") in (EXIT_UNSUPPORTED, EXIT_POLICY):  # waiting cannot change these
                 res["waited_s"] = int(round(time.time() - started))
                 return res
@@ -3801,7 +3845,7 @@ def _record_conversation_usage(conv_id, raw_tokens, carried_on=False, conversati
 
 def journal(script, role, name, provider, model, tokens=None, seconds=0.0, status="ok", log=None,
             pool=None, before=None, after=None, conversation=None, conversation_tokens=None, journal_path=None,
-            context=None, account=None, crossed=None, why=None, rules=None, score_pick=None, score_notes=None, score_table=None):
+            context=None, account=None, crossed=None, why=None, rules=None, score_pick=None, score_notes=None, score_table=None, preset="manual", preset_picks=None):
     """Write one JSON line to ~/.cache/ask/usage.jsonl with model, tokens, and CLI pool before/after
     and carried-on conversation_tokens/conversation.
     """
@@ -3827,6 +3871,9 @@ def journal(script, role, name, provider, model, tokens=None, seconds=0.0, statu
         "status": status,
         "log": log,
     }
+    entry["preset"] = preset
+    if preset_picks is not None:
+        entry["preset_picks"] = preset_picks
     if score_pick is not None:
         entry["score_pick"] = score_pick
     if score_notes:

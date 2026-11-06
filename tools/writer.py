@@ -140,6 +140,7 @@ def _pool_summary_line(model, cs_after, provider="agy"):
 
 def parser(legacy_agy=False):
     ap = argparse.ArgumentParser()
+    ap.add_argument("--preset", help="active preset (weighted presets are shadow only)")
     ap.add_argument("--cwd", required=legacy_agy, help="the folder the writer works in")
     ap.add_argument("--brief", help="the brief, a file the writer is told to read and follow")
     ap.add_argument("--model", help=("agy model id (default: gemini-4-argon-high); given again with --continue"
@@ -359,11 +360,15 @@ class CodexEvents:
 
 
 def _score_kw(decision):
-    return {key: decision[key] for key in ("score_pick", "score_notes", "score_table")
+    return {key: decision[key] for key in ("score_pick", "score_notes", "score_table", "preset", "preset_picks")
             if decision.get(key) is not None}
 
 
 def _say_score(decision, color):
+    active = decision.get("preset", "manual")
+    if active != "manual" and "preset_picks" in decision:
+        proposed = decision.get("preset_picks", {}).get(active, decision.get("model"))
+        print(route.dim(f"[preset {active} (shadow) would pick: {proposed or '-'}]", color), file=sys.stderr)
     for note in decision.get("score_notes", []):
         print(route.dim(f"[score: {note}]", color), file=sys.stderr)
     if decision.get("score_mode") == "shadow" and decision.get("score_pick"):
@@ -378,6 +383,10 @@ def main(argv=None, legacy_agy=False):
         pass
     ap = parser(legacy_agy)
     a = ap.parse_args(argv)
+    try:
+        active = route.resolve_preset(a.preset)
+    except ValueError as error:
+        ap.error(str(error))
     if a.deadline < 0:
         ap.error("--deadline must be nonnegative")
     broker_mode = not legacy_agy and not a.legacy_cli
@@ -446,11 +455,11 @@ def main(argv=None, legacy_agy=False):
                 sys.exit(2)
             print(route.red(f"{chk['reason']}; use a Claude subagent ({subagent})", color_err), file=sys.stderr)
             route.journal(script, role, a.model, chk.get("provider"), a.model,
-                          seconds=0.0, status="quota", pool=chk.get("pool"))
+                          seconds=0.0, status="quota", pool=chk.get("pool"), preset=active["preset"])
             sys.exit(6)
-        decision = chk
+        decision = dict(chk, preset=active["preset"])
     else:
-        decision = route.pick(role, rules=rules, allow_never=a.allow_never, tokens=a.tokens, needs=needs)
+        decision = route.pick(role, preset=active["preset"], rules=rules, allow_never=a.allow_never, tokens=a.tokens, needs=needs)
         _say_score(decision, color_err)
         for note in decision.get("experience", []):
             print(route.dim(f"[experience: {note}]", color_err), file=sys.stderr)

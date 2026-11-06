@@ -25,7 +25,7 @@ PROVIDER_ORDER = {"claude-subscription": 0, "codex": 1, "agy": 2}
 # The words a person reads, in the language ASK_LANG names (uk, en); the limits band takes them from here too.
 DEFAULT_LANG = "en"
 WORDS = {
-    "uk": {"all_models": "усі моделі", "and": " і ", "d": "д", "h": "год", "min": "хв", "spent": "вичерпано",
+    "uk": {"preset_manual": "ручний", "preset_thrifty": "ощадливий", "preset_strong": "сильний", "preset_fast": "швидкий", "all_models": "усі моделі", "and": " і ", "d": "д", "h": "год", "min": "хв", "spent": "вичерпано",
            "skipped": "обходиться", "fast": "швидко", "calm": "спокійно", "resets_in": "скидання через {span}",
            "nested": "{name} входить у «усі моделі»: власний залишок {own}%, доступно {avail}% (менше з двох).",
            "title": "Тижневі ліміти, {stamp}", "head": "| Пул | Лишилось | Скидання через | Темп | Стан |",
@@ -36,7 +36,7 @@ WORDS = {
            "sessions_working": ("сесія працює", "сесії працюють", "сесій працюють"),
            "sessions_idle": ("вільна", "вільні", "вільних"),
            "claude_missing": "⚠️ Claude: цифр немає", "claude_old": "⚠️ Claude: цифри {span} тому", "decimal": ","},
-    "en": {"all_models": "all models", "and": " and ", "d": "d", "h": "h", "min": "min", "spent": "spent",
+    "en": {"preset_manual": "manual", "preset_thrifty": "thrifty", "preset_strong": "strong", "preset_fast": "fast", "all_models": "all models", "and": " and ", "d": "d", "h": "h", "min": "min", "spent": "spent",
            "skipped": "skipped", "fast": "fast", "calm": "calm", "resets_in": "resets in {span}",
            "nested": "{name} sits inside \"all models\": its own {own}% left, {avail}% available (the smaller of the two).",
            "title": "Weekly limits, {stamp}", "head": "| Pool | Left | Resets in | Pace | State |",

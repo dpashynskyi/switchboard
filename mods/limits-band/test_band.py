@@ -27,6 +27,14 @@ def window(kind, remaining, resets_s, pace, length=604800.0):
 
 
 class BandTests(unittest.TestCase):
+    def test_preset_words(self):
+        for language, words in [('en', ['manual', 'thrifty', 'strong', 'fast']),
+                                ('uk', ['ручний', 'ощадливий', 'сильний', 'швидкий'])]:
+            with mock.patch.dict(os.environ, ASK_LANG=language):
+                for name, word in zip(['manual', 'thrifty', 'strong', 'fast'], words):
+                    self.assertIn(word, band.text({'preset': name}))
+                self.assertIn('custom', band.text({'preset': 'custom'}))
+
     def test_span(self):
         self.assertEqual(band.compact_span(4.94 * 86400), "4,9 д")
         self.assertEqual(band.compact_span(17 * 3600 + 3000), "17 год")
@@ -102,9 +110,9 @@ class BandTests(unittest.TestCase):
         data = {"pools": [pool("Anthropic", 14, burns_first=True), pool("OpenAI", 97),
                           pool("Google", 48, skip="нижче порогу"), pool("Google", 44, pace_over=True)],
                 "sessions": {"working": 1, "idle": 11}, "claude": {"status": "ok", "age_s": 7300}, "errors": []}
-        self.assertEqual(band.text(data), "Anthropic 14% ⚠️ · OpenAI 97% · Google 48% ❌ / 44% ⚠️   │   "
+        self.assertEqual(band.text(data), "Anthropic 14% ⚠️ · OpenAI 97% · Google 48% ❌ / 44% ⚠️   │   ручний   │   "
                                           "1 сесія працює, 11 вільних   │   ⚠️ Claude: цифри 2 год тому")
-        self.assertEqual(band.text({"pools": [], "sessions": {"working": 0, "idle": 0}, "claude": {}}), "квот немає")
+        self.assertEqual(band.text({"pools": [], "sessions": {"working": 0, "idle": 0}, "claude": {}}), "квот немає   │   ручний")
         self.assertEqual([band.plural(n, "a", "b", "c") for n in (1, 2, 5, 11, 12, 21, 22, 25, 111)],
                          ["a", "b", "c", "c", "c", "a", "b", "c", "c"])
 

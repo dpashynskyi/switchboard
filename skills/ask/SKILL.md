@@ -119,3 +119,5 @@ router passes over what may not or should not go, and says why (`[passed over: .
 | 7 | refused by the context or account policy |
 | 8 | the role cannot run on this machine |
 | 9 | the deadline passed |
+
+`--preset NAME` records a shadow preset; `--preset` without a question or role compares all roles and presets.

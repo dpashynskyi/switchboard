@@ -11,6 +11,7 @@ does not name.
 
 | Key | What it does | Default |
 |---|---|---|
+| `preset` | active preset, below `--preset` and `ASK_PRESET`; blank is unset | `manual` |
 | `paths` | where each tool is: `{"agy": "/path/agy", "codex": "...", "ollama": "http://127.0.0.1:11434"}`. A path (Ollama: its API URL), `"auto"` (look for it), or `null` (not on this machine: its models are never offered) | the old `models.json`'s path if it has one, else `auto` |
 | `context_paths` | a folder's context: `{"~/work": "work", "~": "personal"}`; the deepest folder holding the current one wins | none |
 | `work_domains` | your employer's email domains: an account whose email ends with one (or a subdomain) is a work account | none |
@@ -54,6 +55,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | Key | What it does |
 |---|---|
 | `models` | `{id: {"provider": ...}}`: a provider for an id no live list names |
+| `presets` | named weight dictionaries: `manual: {}`, `thrifty: {"time": 0.2, "cost": 1.5}`, `strong: {"time": 0.05, "cost": 0.05}`, `fast: {"time": 1.5, "cost": 0.2}`. Top-level overlay merges by preset name; missing weights inherit the role. Weighted presets only report shadow picks |
 | `subscription_models` | the Claude subscription's model ids (its subagents) |
 | `traits` | `{"cannot": {"local": {"*": ["python", "engine", "big-files"]}, "codex": {"win32": ["python"]}}}`: what a provider (or `local`, every local one) or a model cannot do, by platform (`sys.platform`, `*` any) |
 | `never` | ids or globs never called (`--allow-never` overrides), `never_reason` says why |
@@ -71,6 +73,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 
 | Variable | What it does |
 |---|---|
+| `ASK_PRESET` | active preset, below `--preset`, above machine.json `preset`; blank is unset; default `manual` |
 | `ASK_CONTEXT` | `work` or `personal`, over the folder (e.g. from direnv) |
 | `ASK_LANG` | `en` or `uk`: the words of `/limits` and the band (default `en`) |
 | `ASK_ROLES` | another `roles.json` |

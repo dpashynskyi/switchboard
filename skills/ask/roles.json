@@ -1,5 +1,11 @@
 {
   "_comment": "The default roles of switchboard: each row wishes for a model family (a glob over the ids `ask.py --list` shows) at a minimal effort, matched against what this machine offers when the role is called. Edit the order to taste; a row may also name an id: {\"provider\": \"agy\", \"model\": \"gemini-4-argon-high\"}.",
+  "presets": {
+    "manual": {},
+    "thrifty": {"time": 0.2, "cost": 1.5},
+    "strong": {"time": 0.05, "cost": 0.05},
+    "fast": {"time": 1.5, "cost": 0.2}
+  },
   "models": {},
   "subscription_models": [
     "claude-fable-5-1",

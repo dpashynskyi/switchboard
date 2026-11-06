@@ -38,3 +38,5 @@ that may go and should go. Every model passed over is said on stderr as `[passed
 When a call fails on quota or answers nothing, the role goes on to its next model; a deadline (exit 9) or the token
 cap (exit 5) does not move it. `ask.py --status` shows the pools, what burns first and the GPU; `ask.py --list` the
 models and their roles.
+
+Presets: `manual` preserves today's order and each role's live/shadow scoring. `thrifty`, `strong`, and `fast` use their own time/cost weights, in shadow only for now: the actual pick stays manual. Claude stays last under every preset. `ask.py --preset` compares all roles without calling models; `--preset fast` selects the active column.

@@ -1,4 +1,10 @@
 {
+  "presets": {
+    "manual": {},
+    "thrifty": {"time": 0.2, "cost": 1.5},
+    "strong": {"time": 0.05, "cost": 0.05},
+    "fast": {"time": 1.5, "cost": 0.2}
+  },
   "models": {
     "gemini-4-argon-high": {
       "provider": "agy"

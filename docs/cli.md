@@ -12,9 +12,9 @@ usage: ask.py [-h] [--role ROLE] [--tokens TOKENS] [--force] [--continue] [--thr
               --reasoning-read [REASONING_READ] | --reasoning-open [REASONING_OPEN]] [--deadline DEADLINE]
               [--ask {never,human}] [--ask-timeout ASK_TIMEOUT] [--max-tokens MAX_TOKENS]
               [--answer VALUE [VALUE ...]] [--wait] [--max-wait MAX_WAIT] [--keep KEEP] [--unload]
-              [--status] [--verbose] [--allow-never] [--list] [--refresh] [--context CONTEXT] [--notes]
-              [--context-here WORK|PERSONAL] [--init] [--machine {personal,work,both}]
-              [--work-domain WORK_DOMAIN] [--roles] [--yes] [--needs NEEDS]
+              [--preset [PRESET]] [--status] [--verbose] [--allow-never] [--list] [--refresh]
+              [--context CONTEXT] [--notes] [--context-here WORK|PERSONAL] [--init]
+              [--machine {personal,work,both}] [--work-domain WORK_DOMAIN] [--roles] [--yes] [--needs NEEDS]
               [name] [text ...]
 
 positional arguments:
@@ -51,6 +51,7 @@ optional arguments:
   --max-wait MAX_WAIT   max seconds or duration (e.g. 2h) to wait for GPU (default: 2h)
   --keep KEEP           Ollama keep_alive duration (e.g. 10m) for a series of questions; default 0
   --unload              unload whatever Ollama holds in video memory
+  --preset [PRESET]     preset name; without a question, compare all presets (shadow)
   --status              show pools, reservations, GPU, Ollama and last 24h journal
   --verbose             stream agy's steps one line each as they happen
   --allow-never         allow calling a model in roles.json's never list
@@ -75,11 +76,11 @@ optional arguments:
 ## writer
 
 ```text
-usage: writer.py [-h] [--cwd CWD] [--brief BRIEF] [--model MODEL] [--tokens TOKENS] [--needs NEEDS]
-                 [--force] [--python PYTHON] [--add-dir ADD_DIR] [--continue CONVERSATION] [--log LOG]
-                 [--engine] [--allow-never] [--role ROLE] [--max-tokens MAX_TOKENS] [--deadline DEADLINE]
-                 [--ask {human,never}] [--ask-timeout ASK_TIMEOUT] [--answer VALUE [VALUE ...]]
-                 [--agy | --codex] [--verdict ID VERDICT NOTE]
+usage: writer.py [-h] [--preset PRESET] [--cwd CWD] [--brief BRIEF] [--model MODEL] [--tokens TOKENS]
+                 [--needs NEEDS] [--force] [--python PYTHON] [--add-dir ADD_DIR] [--continue CONVERSATION]
+                 [--log LOG] [--engine] [--allow-never] [--role ROLE] [--max-tokens MAX_TOKENS]
+                 [--deadline DEADLINE] [--ask {human,never}] [--ask-timeout ASK_TIMEOUT]
+                 [--answer VALUE [VALUE ...]] [--agy | --codex] [--verdict ID VERDICT NOTE]
                  [text]
 
 positional arguments:
@@ -87,6 +88,7 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
+  --preset PRESET       active preset (weighted presets are shadow only)
   --cwd CWD             the folder the writer works in
   --brief BRIEF         the brief, a file the writer is told to read and follow
   --model MODEL         model id; given again with --continue

@@ -1273,7 +1273,7 @@ class WriterTests(unittest.TestCase):
                                   "model_reasoning_effort=high", "--json", "-o", "answer", "--", "follow-up"])
         expected_flags = {"--help", "--cwd", "--brief", "--model", "--tokens", "--force", "--python", "--add-dir",
                           "--continue", "--log", "--engine", "--allow-never", "--max-tokens", "--role", "--needs",
-                          "--deadline"}
+                          "--deadline", "--preset"}
         self.assertEqual({flag for action in writer.parser(True)._actions for flag in action.option_strings
                           if flag.startswith("--")}, expected_flags)
 

@@ -841,16 +841,53 @@ def print_status(agy, ollama, ctx=None):
     return 0
 
 
+def print_presets(active, context, rules=None, fake=None):
+    """Read routing state without calling a model, reserving quota or waiting."""
+    rules = rules or route.load_roles()
+    names = ["manual"] + [n for n in rules.get("presets", {}) if n != "manual"]
+    print(" | ".join(["role"] + [n + (" *" if n == active else "") for n in names]))
+    claude_models = set()
+    for role in rules.get("roles", {}):
+        decision = route.pick(role, rules=rules, fake=fake, context=context, preset=active)
+        manual = decision.get("model")
+        subscription = decision.get("provider") == "claude-subscription"
+        if subscription and manual:
+            claude_models.add(manual)
+        cells = []
+        for name in names:
+            model = manual if name == "manual" else decision.get("preset_picks", {}).get(name, manual)
+            cells.append(("claude:" if subscription and model == manual else "") + model if model else "-")
+        print(" | ".join([role] + cells))
+    print("* active; weighted presets are shadow only. Roles without preset scoring repeat manual; - means no pick.")
+    if claude_models:
+        cs = route.cloud_state(rules=rules, fake=fake)
+        shown = set()
+        for model in sorted(claude_models):
+            for pool, window in route.covering_pools_and_windows("claude-subscription", model, cs.get("pools", []), include_stale=True):
+                if "week" not in str(window.get("window", "")) or pool["id"] in shown:
+                    continue
+                shown.add(pool["id"])
+                label = pool.get("label", pool["id"]).split("·")[-1].strip()
+                pace = window.get("pace")
+                pace_text = f"x{pace:.1f}" if pace is not None else "pace unknown"
+                print(f"Claude, {label}: {route._available(window) * 100:.0f}% left, {pace_text}")
+    return 0
+
+
 def _policy_kw(decision):
     """What the journal keeps of the policy for a call that went out."""
     kw = {"context": decision.get("context"), "account": decision.get("account"), "crossed": bool(decision.get("crossed"))}
     if decision.get("why"):
         kw["why"] = decision["why"]
-    kw.update({key: decision[key] for key in ("score_pick", "score_notes", "score_table") if decision.get(key) is not None})
+    kw.update({key: decision[key] for key in ("score_pick", "score_notes", "score_table", "preset", "preset_picks") if decision.get(key) is not None})
     return kw
 
 
 def _say_score(decision, color):
+    active = decision.get("preset", "manual")
+    if active != "manual" and "preset_picks" in decision:
+        proposed = decision.get("preset_picks", {}).get(active, decision.get("model"))
+        print(route.dim(f"[preset {active} (shadow) would pick: {proposed or '-'}]", color), file=sys.stderr)
     for note in decision.get("score_notes", []):
         print(route.dim(f"[score: {note}]", color), file=sys.stderr)
     if decision.get("score_mode") == "shadow" and decision.get("score_pick"):
@@ -1092,6 +1129,7 @@ def main():
     p.add_argument("--max-wait", default="7200", help="max seconds or duration (e.g. 2h) to wait for GPU (default: 2h)")
     p.add_argument("--keep", default=None, help="Ollama keep_alive duration (e.g. 10m) for a series of questions; default 0")
     p.add_argument("--unload", action="store_true", help="unload whatever Ollama holds in video memory")
+    p.add_argument("--preset", nargs="?", const="", help="preset name; without a question, compare all presets (shadow)")
     p.add_argument("--status", action="store_true", help="show pools, reservations, GPU, Ollama and last 24h journal")
     p.add_argument("--verbose", action="store_true", help="stream agy's steps one line each as they happen")
     p.add_argument("--allow-never", action="store_true", help="allow calling a model in roles.json's never list")
@@ -1110,6 +1148,10 @@ def main():
     p.add_argument("--needs", type=route.parse_needs, default=[], help="comma-separated needs: python, engine, big-files")
     # Model IDs and question words may surround flags.
     a = p.parse_intermixed_args()
+    try:
+        active = route.resolve_preset(a.preset)
+    except ValueError as error:
+        p.error(str(error))
 
     if a.context_here is not None:
         return init_config.context_here(a.context_here)
@@ -1159,11 +1201,16 @@ def main():
 
     ctx = route.resolve_context(a.context)
     if a.status:
+        print(f"Preset: {active['preset']} ({active['source']})" +
+              (" (shadow)" if active['preset'] != "manual" else ""))
         return print_status(agy, ollama, ctx)
     if a.unload:
         code, msg = unload_all_ollama(ollama)
         print(msg)
         return code
+
+    if a.preset is not None and not a.name and not a.text and not a.role:
+        return print_presets(active["preset"], ctx)
 
     raw_words = list(a.text)
     target_name = a.name
@@ -1213,7 +1260,7 @@ def main():
         excluded = []
         carried_reasons = []
         while True:
-            decision = route.pick(a.role, exclude=excluded, allow_never=a.allow_never, tokens=a.tokens, rules=rules,
+            decision = route.pick(a.role, preset=active["preset"], exclude=excluded, allow_never=a.allow_never, tokens=a.tokens, rules=rules,
                                   context=ctx, needs=a.needs, prompt_tokens=len(text) // 4, effort=a.effort)
             _say_score(decision, err_color)
             passed_over = carried_reasons + list(decision.get("passed_over", []))
@@ -1244,7 +1291,7 @@ def main():
                 return route.EXIT_UNSUPPORTED
 
             if not decision["picked"] and (decision.get("wait") or a.wait):
-                wres = route.wait_until_free(role=a.role, max_wait_s=max_wait_s, tokens=a.tokens, rules=rules, context=ctx, needs=a.needs,
+                wres = route.wait_until_free(role=a.role, preset=active["preset"], max_wait_s=max_wait_s, tokens=a.tokens, rules=rules, context=ctx, needs=a.needs,
                                              exclude=excluded, allow_never=a.allow_never, prompt_tokens=len(text) // 4, effort=a.effort)
                 waited_s = wres.get("waited_s", 0)
                 if not wres.get("picked"):
@@ -1373,6 +1420,7 @@ def main():
     label = chk.get("label") or model
     pool_desc = chk.get("pool") or where
     warning = chk.get("warning")
+    chk["preset"] = active["preset"]
     pol_kw = _policy_kw(chk)
 
     if a.effort and where == "codex":

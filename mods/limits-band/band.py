@@ -189,6 +189,12 @@ def build(cli_id=None):
     rules = route.load_roles()
     out = {"at": time.strftime("%H:%M"), "errors": []}
     try:
+        out["preset"] = route.resolve_preset(rules=rules)["preset"]
+    except ValueError as error:
+        # A wrong preset name must not hide the limits: the band says it and goes on.
+        out["preset"] = "?"
+        out["errors"].append(str(error))
+    try:
         cs = route.cloud_state(rules=rules, ttl=TTL_S)
         out["pools"] = pools_part(cs, rules)
         out["claude"] = claude_age(cs)
@@ -228,7 +234,8 @@ def text(data):
             providers.append(p["provider"])
     summary = " · ".join(f"{name} " + " / ".join(f"{p['left_pct']}%{mark(p)}" for p in data["pools"] if p["provider"] == name)
                          for name in providers) or limits.text("no_quotas")
-    tail = []
+    name = data.get("preset", "manual")
+    tail = [limits.text("preset_" + name) if name in ("manual", "thrifty", "strong", "fast") else name]
     s = data.get("sessions")
     if s:
         said = ([f"{s['working']} {plural(s['working'], *limits.text('sessions_working'))}"] if s["working"] else [])

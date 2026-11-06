@@ -130,8 +130,9 @@ def size_factor(role, prompt_tokens, rows, rules=None):
     return max(lo, min(hi, .5 + .5 * prompt_tokens / median))
 
 
-def rank(role, evaluated, rules, rows, bench, cs, prompt_tokens=None):
-    cfg = config(role, rules)
+def rank(role, evaluated, rules, rows, bench, cs, prompt_tokens=None, weights=None):
+    cfg = dict(config(role, rules))
+    cfg.update({k: v for k, v in (weights or {}).items() if k in ("time", "cost")})
     budget = cfg['time_budget_s']
     spec = rules['roles'][role]
     raw = spec if isinstance(spec, list) else spec.get('models', spec.get('names', []))
