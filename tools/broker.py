@@ -1,4 +1,4 @@
-"""Interactive writer protocols. Standard library only; no authentication or rollout reads."""
+"""Interactive writer protocols. Standard library only; no authentication."""
 import copy
 import json
 import os
@@ -13,6 +13,13 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+
+AGY_BRAIN = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity-cli", "brain")
+
+
+def agy_transcript_path(session_id):
+    return os.path.join(AGY_BRAIN, session_id, ".system_generated", "logs", "transcript.jsonl")
+
 
 NO_HUMAN = "No human is available: decide yourself and say what you assumed."
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -621,10 +628,13 @@ class Driver:
         print(f"[conversation {conversation}: carry on with --continue {conversation} --model {self.model}]",
               file=sys.stderr, flush=True)
 
-    def check_cap(self, tokens):
+    def check_cap(self, tokens, live=False):
         amount = self.billed(tokens)
         with self.stop_lock:
             if self.cap is None or amount <= self.cap or self.capped is not None or self.timed_out is not None:
+                return
+            # A live reading that lost the race to the turn's end must not stop a finished run.
+            if live and self.turn_ended.is_set():
                 return
             self.capped = amount
             self.progress(f"ERROR: hard stop at {amount:,} billed tokens, over --max-tokens {self.cap:,}")
@@ -649,6 +659,82 @@ class AcpDriver(Driver):
         self.tools = {}
         self.tools_lock = threading.Lock()
         self.denied_tool_id = None
+        self.usage_watchdog = None
+        self.live_tokens = {"in": 0, "out": 0, "total": 0, "cached_in": 0}
+
+    def _read_transcript(self):
+        try:
+            with open(self.transcript_path, "rb") as handle:
+                handle.seek(self.transcript_offset)
+                data = handle.read()
+                self.transcript_offset = handle.tell()
+                self.transcript_found = True
+        except FileNotFoundError:
+            return []
+        except OSError as error:  # there but unreadable (a sharing violation): said once, at the turn's end
+            self.transcript_error = str(error)
+            return []
+        lines = (self.transcript_pending + data).split(b"\n")
+        self.transcript_pending = lines.pop()
+        rows = []
+        for line in lines:
+            try:
+                row = json.loads(line)
+            except (ValueError, UnicodeError):
+                continue
+            if isinstance(row, dict) and type(row.get("step_index")) is int:
+                rows.append(row)
+        return rows
+
+    def _start_usage_watchdog(self):
+        self.transcript_path = agy_transcript_path(self.conversation)
+        self.transcript_offset, self.transcript_pending = 0, b""
+        self.transcript_found, self.transcript_error = False, None
+        # Resumed sessions retain earlier steps, including later revisions of those steps.
+        baseline = {row["step_index"] for row in self._read_transcript()}
+        # A line left unfinished by an earlier process is not this run's step.
+        self.transcript_pending = b""
+        self.usage_watchdog = threading.Thread(target=self._watch_usage, args=(baseline,), daemon=True)
+        self.usage_watchdog.start()
+
+    def _watch_usage(self, baseline):
+        rows = {}
+        rpc = self.transport
+        while True:
+            # One more read after the stop, so a run stopped between readings keeps its last steps.
+            done = (self.turn_ended.wait(1) or self.capped is not None or self.timed_out is not None
+                    or rpc.closed.is_set() or rpc.eof.is_set())
+            for row in self._read_transcript():
+                index = row["step_index"]
+                if index in baseline or "input_tokens" not in row or row.get("source", "MODEL") != "MODEL":
+                    continue
+                usage = tuple(row.get(key, 0) for key in ("input_tokens", "output_tokens", "cache_read_tokens"))
+                if all(type(value) is int and value >= 0 for value in usage):
+                    rows[index] = usage
+            incoming, outgoing, cached = (sum(usage[i] for usage in rows.values()) for i in range(3))
+            self.live_tokens = {"in": incoming, "out": outgoing, "total": incoming + outgoing, "cached_in": cached}
+            if done:
+                return
+            self.check_cap(self.live_tokens, live=True)
+
+    def _usage_watchdog_done(self):
+        if self.usage_watchdog and self.usage_watchdog is not threading.current_thread():
+            self.usage_watchdog.join(5)
+
+    def end_turn(self):
+        ended = self.turn_ended.is_set()
+        super().end_turn()
+        self._usage_watchdog_done()
+        if not ended and self.usage_watchdog and self.transcript_error:
+            self.progress("note: agy transcript unreadable (" + self.transcript_error + "); --max-tokens was checked only at the turn's end")
+        elif (not ended and self.usage_watchdog and not self.transcript_found
+                and not os.path.isfile(self.transcript_path)):
+            self.progress("note: agy transcript unavailable; --max-tokens was checked only at the turn's end")
+
+    def close(self):
+        super().close()
+        if self.usage_watchdog and self.usage_watchdog is not threading.current_thread():
+            self.usage_watchdog.join()
 
     def notification(self, method, params):
         if method != "session/update":
@@ -717,6 +803,8 @@ class AcpDriver(Driver):
             params["sessionId"] = conversation
         session = rpc.request("session/resume" if conversation else "session/new", params, 30)
         self.known(session.get("sessionId") or conversation)
+        if self.cap is not None:
+            self._start_usage_watchdog()
         rpc.request("session/set_model", {"sessionId": self.conversation, "modelId": self.model}, 30)
         # Three carry-on turns in addition to the original turn.
         for turn in range(4):
@@ -739,9 +827,17 @@ class AcpDriver(Driver):
         return self.result()
 
     def result(self):
+        if self.turn_ended.is_set() or self.capped is not None or self.timed_out is not None:
+            self._usage_watchdog_done()  # its last reading first
+        usage, live = self.usage, self.live_tokens
+        # Stopped inside a turn (the cap, the deadline), its result never came: the transcript's steps are this run's usage,
+        # or the journal would count the run as nothing.
+        if live["total"] > usage["input_tokens"] + usage["output_tokens"]:
+            usage = {"input_tokens": live["in"], "output_tokens": live["out"], "thinking_tokens": usage["thinking_tokens"],
+                     "cache_read_tokens": live["cached_in"], "total_tokens": live["total"] + live["cached_in"]}
         return {"response": "".join(self.answer).strip(), "conversation_id": self.conversation,
                 "reasoning": "".join(self.reasoning), "reasoning_kind": self.reasoning_kind,
-                "usage": self.usage, "denied_actions": self.denied, "failed": self.failed, "deadline": self.timed_out}
+                "usage": usage, "denied_actions": self.denied, "failed": self.failed, "deadline": self.timed_out}
 
 
 class CodexAppDriver(Driver):

@@ -117,7 +117,7 @@ optional arguments:
   --verdict ID VERDICT NOTE
                         record ok, fixed or rejected for a writer run
 
-Broker: ACP reports usage only after each turn; agy --max-tokens cannot stop mid-turn.
+Broker: agy's usage is read from its transcript after each model step, so --max-tokens stops it there.
 ```
 
 ## limits

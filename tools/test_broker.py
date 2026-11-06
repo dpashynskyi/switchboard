@@ -418,6 +418,86 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(driver.capped, 120)
         self.assertIn("session/resume", [e["msg"].get("method") for e in self.events])
 
+    def test_acp_cap_during_turn(self):
+        with mock.patch.object(broker, "AGY_BRAIN", os.path.join(self.cwd, "brain")):
+            path = broker.agy_transcript_path("fake-session")
+            rows = [{"step_index": 1, "source": "MODEL", "input_tokens": 20, "output_tokens": 5},
+                    {"step_index": 1, "source": "MODEL", "input_tokens": 100, "output_tokens": 20,
+                     "cache_read_tokens": 9000},
+                    {"step_index": 2, "source": "MODEL", "input_tokens": 60, "output_tokens": 10}]
+            text = "not json\n[]\n" + "".join(json.dumps(row) + "\n" for row in rows)
+            driver = self.driver("agy", {"turns": [{"steps": [
+                {"append": {"path": path, "text": text}}, {"sleep": 10}]}]}, max_tokens=150)
+            started = time.monotonic()
+            try:
+                with self.assertRaises(RuntimeError):
+                    driver.run("test prompt")
+                self.assertEqual(driver.capped, 190)
+                self.assertIsNotNone(driver.transport.process.poll())
+            finally:
+                driver.close()
+            self.assertLess(time.monotonic() - started, 4)
+            self.assertEqual(driver.live_tokens, {"in": 160, "out": 30, "total": 190, "cached_in": 9000})
+            self.assertFalse(driver.usage_watchdog.is_alive())
+            # No turn result came: the run's usage is the transcript's, for the journal.
+            self.assertEqual(driver.result()["usage"], {"input_tokens": 160, "output_tokens": 30, "thinking_tokens": 0,
+                                                        "cache_read_tokens": 9000, "total_tokens": 9190})
+
+    def test_acp_transcript_resume_baseline(self):
+        with mock.patch.object(broker, "AGY_BRAIN", os.path.join(self.cwd, "brain")):
+            path = Path(broker.agy_transcript_path("old-session"))
+            path.parent.mkdir(parents=True)
+            old = {"step_index": 1, "source": "MODEL", "input_tokens": 9000, "output_tokens": 1000}
+            path.write_text(json.dumps(old) + "\n", encoding="utf-8")
+            rows = [old, {"step_index": 2, "source": "MODEL", "input_tokens": 30, "output_tokens": 10},
+                    {"step_index": 3, "source": "MODEL", "input_tokens": 20, "output_tokens": 5}]
+            steps = [{"append": {"path": str(path), "text": "".join(json.dumps(row) + "\n" for row in rows)}},
+                     {"sleep": 2}]
+            driver, _ = self.run_driver("agy", {"turns": [{"steps": steps}]},
+                                        conversation="old-session", max_tokens=200)
+            self.assertIsNone(driver.capped)
+            self.assertEqual(driver.live_tokens["total"], 65)
+
+    def test_acp_transcript_partial_line(self):
+        with mock.patch.object(broker, "AGY_BRAIN", os.path.join(self.cwd, "brain")):
+            path = broker.agy_transcript_path("fake-session")
+            row = json.dumps({"step_index": 1, "source": "MODEL", "input_tokens": 160, "output_tokens": 20})
+            steps = [{"append": {"path": path, "text": row}}, {"sleep": 1.5},
+                     {"append": {"path": path, "text": "\n" + row + "\n"}}, {"sleep": 2}]
+            driver = self.driver("agy", {"turns": [{"steps": steps}]}, max_tokens=200)
+            thread, values, errors = self.in_thread(lambda: driver.run("test prompt"))
+            try:
+                wait_for(lambda: getattr(driver, "transcript_pending", b""))
+                self.assertEqual(driver.live_tokens["total"], 0)
+                self.assertIsNone(driver.capped)
+                wait_for(lambda: driver.live_tokens["total"] == 180)
+                thread.join(5)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(errors, [])
+                self.assertEqual(len(values), 1)
+                self.assertIsNone(driver.capped)
+                self.assertEqual(driver.live_tokens["total"], 180)
+            finally:
+                driver.close()
+
+    def test_live_cap_after_the_turn_ended_stops_nothing(self):
+        driver = self.driver("agy", max_tokens=10)
+        driver.turn_ended.set()
+        driver.check_cap({"in": 500, "out": 0, "total": 500, "cached_in": 0}, live=True)
+        self.assertIsNone(driver.capped)
+
+    def test_acp_resume_baseline_drops_an_unfinished_line(self):
+        with mock.patch.object(broker, "AGY_BRAIN", os.path.join(self.cwd, "brain")):
+            path = Path(broker.agy_transcript_path("old-session"))
+            path.parent.mkdir(parents=True)
+            # An earlier process stopped mid-line: its step is not this run's.
+            path.write_text('{"step_index": 1, "source": "MODEL", "input_tokens": 9000, "output_tokens": 1000', encoding="utf-8")
+            new = {"step_index": 2, "source": "MODEL", "input_tokens": 30, "output_tokens": 10}
+            steps = [{"append": {"path": str(path), "text": "}\n" + json.dumps(new) + "\n"}}, {"sleep": 2}]
+            driver, _ = self.run_driver("agy", {"turns": [{"steps": steps}]}, conversation="old-session", max_tokens=200)
+            self.assertIsNone(driver.capped)
+            self.assertEqual(driver.live_tokens["total"], 40)
+
     def test_codex_file_allow_and_command_refusal_choices(self):
         steps = [codex(changes=[{"path": "one.txt", "kind": "add", "diff": "+one"}]),
                  codex(command="git push", decisions=["accept", "cancel"]),

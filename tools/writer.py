@@ -169,7 +169,7 @@ def parser(legacy_agy=False):
         ap.add_argument("--ask", choices=("human", "never"), default="human", help="broker approvals (default: human)")
         ap.add_argument("--ask-timeout", type=float, default=600, help="seconds to wait for a human (default: 600)")
         ap.add_argument("--answer", nargs="+", metavar="VALUE", help="<base> <option> [text]: answer a pending request")
-        ap.epilog = "Broker: ACP reports usage only after each turn; agy --max-tokens cannot stop mid-turn."
+        ap.epilog = "Broker: agy's usage is read from its transcript after each model step, so --max-tokens stops it there."
         providers = ap.add_mutually_exclusive_group()
         providers.add_argument("--agy", dest="provider", action="store_const", const="agy", help="use agy for --model")
         providers.add_argument("--codex", dest="provider", action="store_const", const="codex", help="use Codex for --model")

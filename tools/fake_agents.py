@@ -2,7 +2,7 @@
 
     python -B tools/fake_agents.py acp --script '{"turns": [...]}'
 Or set BROKER_FAKE_SCRIPT to the same JSON object. No real agents or network.
-Each turn has steps (method/params for requests, notification/params, or sleep), answer and usage.
+Each turn has steps (method/params for requests, notification/params, append, or sleep), answer and usage.
 """
 import argparse
 import json
@@ -61,6 +61,11 @@ class FakeServer:
                     return
                 elif "sleep" in step:
                     time.sleep(step["sleep"])
+                elif "append" in step:
+                    append = step["append"]
+                    os.makedirs(os.path.dirname(os.path.abspath(append["path"])), exist_ok=True)
+                    with open(append["path"], "a", encoding="utf-8", newline="") as handle:
+                        handle.write(append["text"])
                 elif "notification" in step:
                     self.notify(step["notification"], step.get("params") or {})
                 elif "method" in step:
