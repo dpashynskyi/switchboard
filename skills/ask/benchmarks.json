@@ -1,0 +1,598 @@
+{
+  "_comment": "Public benchmark scores as a starting weight (prior) for a model the router has little experience of. Keys are model families: an id's effort suffix (-low, -medium, -high, -xhigh) is dropped to find its entry. A model a source does not list is absent there, not low. Read by hand from the pages below; refresh weekly (SKILL.md); `python experience.py --check` says what is stale or missing.",
+  "sources": {
+    "benchlm-coding": {
+      "url": "https://benchlm.ai/coding",
+      "what": "weighted coding composite (BenchAlign v5.8: SWE-bench Pro 26%, DeepSWE 15%, CursorBench 10%, SciCode 10%, ...), 0-100",
+      "category": "code",
+      "top": 82.9,
+      "read_at": "2026-11-05"
+    },
+    "llmstats-coding": {
+      "url": "https://llm-stats.com/leaderboards/best-ai-for-coding",
+      "what": "coding index from arena votes and benchmarks; only the first 30 rows were read",
+      "category": "code",
+      "top": 51.0,
+      "read_at": "2026-11-05"
+    },
+    "aa-intelligence": {
+      "category": "general",
+      "top": 60,
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "read_at": "2026-11-05"
+    },
+    "aa-terminal-bench": {
+      "category": "agentic",
+      "top": 63.6,
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "read_at": "2026-11-05"
+    },
+    "aa-frontiercode": {
+      "category": "agentic",
+      "top": 46.4,
+      "url": "https://artificialanalysis.ai/evaluations/frontiercode-2-0",
+      "read_at": "2026-11-05"
+    },
+    "aa-lcr": {
+      "category": "long-context",
+      "top": 88.7,
+      "url": "https://artificialanalysis.ai/evaluations/artificial-analysis-long-context-reasoning",
+      "read_at": "2026-11-05"
+    },
+    "aa-mrcr": {
+      "category": "long-context",
+      "top": 41.7,
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "read_at": "2026-11-05"
+    },
+    "aa-coding-agent": {
+      "category": "agentic",
+      "top": 0.617,
+      "url": "https://artificialanalysis.ai/agents/coding-agents",
+      "read_at": "2026-11-05"
+    },
+    "arena-text": {
+      "category": "writing",
+      "top": 1520,
+      "url": "https://arena.ai/leaderboard/chat/text",
+      "read_at": "2026-11-05"
+    }
+  },
+  "models": {
+    "claude-opus-5-5": {
+      "benchlm-coding": 82.9,
+      "llmstats-coding": 51.0
+    },
+    "claude-sonnet-5-5": {
+      "benchlm-coding": 81.7,
+      "llmstats-coding": 48.7
+    },
+    "claude-fable-5-1": {
+      "benchlm-coding": 76.4
+    },
+    "gpt-6-astra": {
+      "benchlm-coding": 74.7,
+      "llmstats-coding": 46.7
+    },
+    "gemini-4-argon": {
+      "benchlm-coding": 72.2,
+      "llmstats-coding": 43.4
+    },
+    "gpt-6.1-sol": {
+      "benchlm-coding": 70.3,
+      "llmstats-coding": 39.6
+    },
+    "gpt-6.1-terra": {
+      "llmstats-coding": 37.3
+    },
+    "gemini-3.8-flash": {
+      "benchlm-coding": 59.8
+    },
+    "gpt-6-luna": {
+      "benchlm-coding": 51.4
+    },
+    "gpt-oss-120b": {
+      "benchlm-coding": 28.4
+    },
+    "gemma4:12b": {
+      "benchlm-coding": 27.2
+    },
+    "gpt-oss:20b": {
+      "benchlm-coding": 24.3
+    }
+  },
+  "default_effort": {
+    "codex": "high"
+  },
+  "variants": {
+    "claude-opus-5-5-max": {
+      "aa-intelligence": 59.1,
+      "aa-terminal-bench": 59.6,
+      "aa-frontiercode": 46.4,
+      "aa-lcr": 84.7,
+      "aa-mrcr": 27.8,
+      "minutes_per_task": 26.2,
+      "output_tokens_per_task": 173313.0,
+      "aa-coding-agent": 0.617
+    },
+    "claude-opus-5-5-xhigh": {
+      "aa-intelligence": 57.4,
+      "aa-terminal-bench": 59.6,
+      "aa-frontiercode": 43.8,
+      "aa-lcr": 84.7,
+      "aa-mrcr": 25.0,
+      "minutes_per_task": 16.0,
+      "output_tokens_per_task": 103395.0
+    },
+    "claude-opus-5-5-high": {
+      "aa-intelligence": 51.8,
+      "aa-terminal-bench": 56.6,
+      "aa-frontiercode": 35.9,
+      "aa-lcr": 82.7,
+      "aa-mrcr": 15.0,
+      "minutes_per_task": 9.1,
+      "output_tokens_per_task": 60071.0,
+      "arena-text": 1509
+    },
+    "claude-opus-5-5-medium": {
+      "aa-intelligence": 48.2,
+      "aa-terminal-bench": 52.5,
+      "aa-frontiercode": 33.1,
+      "aa-lcr": 84.3,
+      "aa-mrcr": 22.2,
+      "minutes_per_task": 6.6,
+      "output_tokens_per_task": 43817.0
+    },
+    "claude-opus-5-5-low": {
+      "aa-intelligence": 34.8,
+      "aa-terminal-bench": 31.3,
+      "aa-frontiercode": 15.8,
+      "aa-lcr": 80.7,
+      "aa-mrcr": 19.4,
+      "minutes_per_task": 3.0,
+      "output_tokens_per_task": 19060.0
+    },
+    "claude-sonnet-5-5-max": {
+      "aa-intelligence": 54.5,
+      "aa-terminal-bench": 63.6,
+      "aa-frontiercode": 41.7,
+      "aa-lcr": 82.7,
+      "aa-mrcr": 41.7,
+      "minutes_per_task": 30.7,
+      "output_tokens_per_task": 285387.0,
+      "aa-coding-agent": 0.593
+    },
+    "claude-sonnet-5-5-xhigh": {
+      "aa-intelligence": 49.9,
+      "aa-terminal-bench": 57.1,
+      "aa-frontiercode": 35.6,
+      "aa-lcr": 79.7,
+      "aa-mrcr": 20.6,
+      "minutes_per_task": 14.7,
+      "output_tokens_per_task": 122205.0,
+      "arena-text": 1477
+    },
+    "claude-sonnet-5-5-high": {
+      "aa-intelligence": 41.5,
+      "aa-terminal-bench": 43.9,
+      "aa-frontiercode": 25.7,
+      "aa-lcr": 78.0,
+      "aa-mrcr": 18.9,
+      "minutes_per_task": 6.8,
+      "output_tokens_per_task": 58421.0
+    },
+    "claude-sonnet-5-5-medium": {
+      "aa-intelligence": 30.8,
+      "aa-terminal-bench": 29.8,
+      "aa-frontiercode": 11.0,
+      "aa-lcr": 76.3,
+      "aa-mrcr": 17.8,
+      "minutes_per_task": 3.7,
+      "output_tokens_per_task": 30746.0
+    },
+    "claude-sonnet-5-5-low": {
+      "aa-intelligence": 25.6,
+      "aa-terminal-bench": 20.7,
+      "aa-frontiercode": 7.1,
+      "aa-lcr": 76.0,
+      "aa-mrcr": 19.4,
+      "minutes_per_task": 2.5,
+      "output_tokens_per_task": 20856.0
+    },
+    "claude-fable-5-1-max": {
+      "aa-intelligence": 49.2,
+      "aa-terminal-bench": 52.0,
+      "aa-frontiercode": 31.6,
+      "aa-lcr": 85.3,
+      "aa-mrcr": 15.6,
+      "minutes_per_task": 22.2,
+      "output_tokens_per_task": 117941.0,
+      "aa-coding-agent": 0.576,
+      "arena-text": 1504
+    },
+    "claude-fable-5-1-xhigh": {
+      "aa-intelligence": 50.0,
+      "aa-terminal-bench": 55.1,
+      "aa-frontiercode": 35.7,
+      "aa-lcr": 83.0,
+      "aa-mrcr": 13.3,
+      "minutes_per_task": 18.6,
+      "output_tokens_per_task": 97059.0
+    },
+    "claude-fable-5-1-high": {
+      "aa-intelligence": 47.2,
+      "aa-terminal-bench": 52.0,
+      "aa-frontiercode": 30.3,
+      "aa-lcr": 83.7,
+      "aa-mrcr": 15.6,
+      "minutes_per_task": 12.6,
+      "output_tokens_per_task": 66031.0
+    },
+    "claude-fable-5-1-medium": {
+      "aa-intelligence": 43.2,
+      "aa-terminal-bench": 44.9,
+      "aa-frontiercode": 28.8,
+      "aa-lcr": 84.7,
+      "aa-mrcr": 9.4,
+      "minutes_per_task": 9.4,
+      "output_tokens_per_task": 48545.0
+    },
+    "claude-fable-5-1-low": {
+      "aa-intelligence": 38.7,
+      "aa-terminal-bench": 40.4,
+      "aa-frontiercode": 22.8,
+      "aa-lcr": 82.3,
+      "aa-mrcr": 18.3,
+      "minutes_per_task": 7.3,
+      "output_tokens_per_task": 37837.0
+    },
+    "claude-haiku-5-5-max": {
+      "aa-intelligence": 36.5,
+      "aa-terminal-bench": 32.8,
+      "aa-frontiercode": 34.9,
+      "aa-lcr": 82.7,
+      "aa-mrcr": 35.0,
+      "minutes_per_task": 14.6,
+      "output_tokens_per_task": 225966.0,
+      "aa-coding-agent": 0.373
+    },
+    "claude-haiku-5-5-xhigh": {
+      "aa-intelligence": 34.6,
+      "aa-terminal-bench": 29.3,
+      "aa-frontiercode": 29.9,
+      "aa-lcr": 78.3,
+      "aa-mrcr": 15.0,
+      "minutes_per_task": 9.5,
+      "output_tokens_per_task": 136177.0
+    },
+    "claude-haiku-5-5-high": {
+      "aa-intelligence": 29.9,
+      "aa-terminal-bench": 21.7,
+      "aa-frontiercode": 23.2,
+      "aa-lcr": 77.3,
+      "aa-mrcr": 15.0,
+      "minutes_per_task": 6.7,
+      "output_tokens_per_task": 88064.0,
+      "arena-text": 1425
+    },
+    "claude-haiku-5-5-medium": {
+      "aa-intelligence": 24.6,
+      "aa-terminal-bench": 15.2,
+      "aa-frontiercode": 16.1,
+      "aa-lcr": 77.3,
+      "aa-mrcr": 16.1,
+      "minutes_per_task": 4.0,
+      "output_tokens_per_task": 53335.0
+    },
+    "claude-haiku-5-5-low": {
+      "aa-intelligence": 18.6,
+      "aa-terminal-bench": 12.6,
+      "aa-frontiercode": 8.0,
+      "aa-lcr": 72.0,
+      "aa-mrcr": 12.2,
+      "minutes_per_task": 2.2,
+      "output_tokens_per_task": 28161.0
+    },
+    "gpt-6-astra-max": {
+      "aa-intelligence": 56.9,
+      "aa-terminal-bench": 59.1,
+      "aa-frontiercode": 42.4,
+      "aa-lcr": 80.7,
+      "aa-mrcr": 41.7,
+      "minutes_per_task": 19.1,
+      "output_tokens_per_task": 51973.0,
+      "aa-coding-agent": 0.547,
+      "arena-text": 1476
+    },
+    "gpt-6-astra-xhigh": {
+      "aa-intelligence": 55.3,
+      "aa-terminal-bench": 59.6,
+      "aa-frontiercode": 41.4,
+      "aa-lcr": 80.0,
+      "aa-mrcr": 36.1,
+      "minutes_per_task": 9.5,
+      "output_tokens_per_task": 26724.0
+    },
+    "gpt-6-astra-high": {
+      "aa-intelligence": 54.8,
+      "aa-terminal-bench": 54.0,
+      "aa-frontiercode": 40.1,
+      "aa-lcr": 80.0,
+      "aa-mrcr": 32.8,
+      "minutes_per_task": 8.2,
+      "output_tokens_per_task": 23133.0
+    },
+    "gpt-6-astra-medium": {
+      "aa-intelligence": 51.6,
+      "aa-terminal-bench": 49.5,
+      "aa-frontiercode": 36.6,
+      "aa-lcr": 79.7,
+      "aa-mrcr": 38.3,
+      "minutes_per_task": 6.0,
+      "output_tokens_per_task": 18052.0
+    },
+    "gpt-6-astra-low": {
+      "aa-intelligence": 43.3,
+      "aa-terminal-bench": 41.9,
+      "aa-frontiercode": 26.2,
+      "aa-lcr": 80.0,
+      "aa-mrcr": 33.9,
+      "minutes_per_task": 3.2,
+      "output_tokens_per_task": 9126.0
+    },
+    "gpt-6.1-sol-max": {
+      "aa-intelligence": 54.6,
+      "aa-terminal-bench": 56.1,
+      "aa-frontiercode": 40.6,
+      "aa-lcr": 83.0,
+      "aa-mrcr": 38.3,
+      "minutes_per_task": 21.2,
+      "output_tokens_per_task": 67824.0,
+      "aa-coding-agent": 0.541,
+      "arena-text": 1481
+    },
+    "gpt-6.1-sol-xhigh": {
+      "aa-intelligence": 52.5,
+      "aa-terminal-bench": 54.0,
+      "aa-frontiercode": 38.5,
+      "aa-lcr": 79.7,
+      "aa-mrcr": 35.6,
+      "minutes_per_task": 9.1,
+      "output_tokens_per_task": 30241.0
+    },
+    "gpt-6.1-sol-high": {
+      "aa-intelligence": 50.3,
+      "aa-terminal-bench": 51.5,
+      "aa-frontiercode": 36.7,
+      "aa-lcr": 82.3,
+      "aa-mrcr": 31.7,
+      "minutes_per_task": 6.6,
+      "output_tokens_per_task": 22606.0
+    },
+    "gpt-6.1-sol-medium": {
+      "aa-intelligence": 46.3,
+      "aa-terminal-bench": 48.0,
+      "aa-frontiercode": 33.4,
+      "aa-lcr": 83.3,
+      "aa-mrcr": 32.2,
+      "minutes_per_task": 3.9,
+      "output_tokens_per_task": 13518.0
+    },
+    "gpt-6.1-sol-low": {
+      "aa-intelligence": 34.8,
+      "aa-terminal-bench": 30.8,
+      "aa-frontiercode": 20.2,
+      "aa-lcr": 84.0,
+      "aa-mrcr": 26.7,
+      "minutes_per_task": 1.7,
+      "output_tokens_per_task": 5838.0
+    },
+    "gpt-6.1-terra-max": {
+      "aa-intelligence": 51.3,
+      "aa-terminal-bench": 55.6,
+      "aa-frontiercode": 42.3,
+      "aa-lcr": 82.7,
+      "aa-mrcr": 30.6,
+      "minutes_per_task": 13.1,
+      "output_tokens_per_task": 59883.0,
+      "aa-coding-agent": 0.481
+    },
+    "gpt-6.1-terra-xhigh": {
+      "aa-intelligence": 45.3,
+      "aa-terminal-bench": 46.5,
+      "aa-frontiercode": 36.9,
+      "aa-lcr": 81.7,
+      "minutes_per_task": 5.9,
+      "output_tokens_per_task": 26200.0,
+      "aa-coding-agent": 0.482
+    },
+    "gpt-6.1-terra-high": {
+      "aa-intelligence": 42.4,
+      "aa-terminal-bench": 41.9,
+      "aa-frontiercode": 37.5,
+      "aa-lcr": 82.3,
+      "minutes_per_task": 3.8,
+      "output_tokens_per_task": 16746.0,
+      "aa-coding-agent": 0.463
+    },
+    "gpt-6.1-terra-medium": {
+      "aa-intelligence": 38.2,
+      "aa-terminal-bench": 32.3,
+      "aa-frontiercode": 34.5,
+      "aa-lcr": 80.7,
+      "minutes_per_task": 2.5,
+      "output_tokens_per_task": 10875.0,
+      "aa-coding-agent": 0.42
+    },
+    "gpt-6.1-terra-low": {
+      "aa-intelligence": 29.4,
+      "aa-terminal-bench": 15.2,
+      "aa-frontiercode": 24.5,
+      "aa-lcr": 81.0,
+      "minutes_per_task": 1.0,
+      "output_tokens_per_task": 4422.0,
+      "aa-coding-agent": 0.349
+    },
+    "gpt-6.1-terra-non-reasoning": {
+      "aa-intelligence": 30.5,
+      "aa-terminal-bench": 26.8,
+      "aa-frontiercode": 33.4,
+      "aa-lcr": 67.7,
+      "minutes_per_task": 2.2,
+      "output_tokens_per_task": 9488.0,
+      "aa-coding-agent": 0.392
+    },
+    "gpt-6-luna-max": {
+      "aa-intelligence": 27.9,
+      "aa-terminal-bench": 12.6,
+      "aa-frontiercode": 25.2,
+      "aa-lcr": 83.3,
+      "aa-mrcr": 26.1,
+      "minutes_per_task": 12.0,
+      "output_tokens_per_task": 75296.0,
+      "aa-coding-agent": 0.311,
+      "arena-text": 1441
+    },
+    "gpt-6-luna-xhigh": {
+      "aa-intelligence": 23.5,
+      "aa-terminal-bench": 8.1,
+      "aa-frontiercode": 18.4,
+      "aa-lcr": 80.0,
+      "aa-mrcr": 20.6,
+      "minutes_per_task": 7.4,
+      "output_tokens_per_task": 43893.0
+    },
+    "gpt-6-luna-high": {
+      "aa-intelligence": 21.4,
+      "aa-terminal-bench": 4.5,
+      "aa-frontiercode": 18.6,
+      "aa-lcr": 79.3,
+      "aa-mrcr": 19.4,
+      "minutes_per_task": 5.6,
+      "output_tokens_per_task": 32839.0
+    },
+    "gpt-6-luna-medium": {
+      "aa-intelligence": 18.5,
+      "aa-terminal-bench": 2.5,
+      "aa-frontiercode": 12.8,
+      "aa-lcr": 78.3,
+      "aa-mrcr": 18.3,
+      "output_tokens_per_task": 19823.0
+    },
+    "gpt-6-luna-low": {
+      "aa-intelligence": 9.7,
+      "aa-terminal-bench": 0.0,
+      "aa-frontiercode": 2.2,
+      "aa-lcr": 74.0,
+      "aa-mrcr": 18.9,
+      "minutes_per_task": 0.6,
+      "output_tokens_per_task": 3296.0
+    },
+    "gpt-6-luna-non-reasoning": {
+      "aa-intelligence": 9.4,
+      "aa-terminal-bench": 1.5,
+      "aa-frontiercode": 1.6,
+      "aa-lcr": 39.7,
+      "aa-mrcr": 15.0,
+      "minutes_per_task": 1.8,
+      "output_tokens_per_task": 10059.0
+    },
+    "gemini-4-argon-high": {
+      "aa-intelligence": 50.4,
+      "aa-terminal-bench": 57.1,
+      "aa-frontiercode": 25.7,
+      "aa-lcr": 79.7,
+      "aa-mrcr": 13.9,
+      "minutes_per_task": 26.1,
+      "output_tokens_per_task": 116368.0,
+      "aa-coding-agent": 0.532,
+      "arena-text": 1520
+    },
+    "gemini-3.8-flash-high": {
+      "aa-intelligence": 30.8,
+      "aa-terminal-bench": 19.7,
+      "aa-frontiercode": 18.7,
+      "aa-lcr": 81.3,
+      "aa-mrcr": 10.6,
+      "minutes_per_task": 14.1,
+      "output_tokens_per_task": 98940.0,
+      "aa-coding-agent": 0.333,
+      "arena-text": 1496
+    },
+    "gemini-3.8-flash-medium": {
+      "aa-intelligence": 30.1,
+      "aa-terminal-bench": 19.7,
+      "aa-frontiercode": 16.5,
+      "aa-lcr": 84.0,
+      "aa-mrcr": 12.8,
+      "output_tokens_per_task": 82068.0
+    },
+    "gemini-3.8-flash-low": {
+      "aa-intelligence": 22.5,
+      "aa-terminal-bench": 10.1,
+      "aa-frontiercode": 8.1,
+      "aa-lcr": 80.7,
+      "aa-mrcr": 15.6
+    },
+    "gpt-oss-120b-high": {
+      "aa-terminal-bench": 0.0,
+      "aa-frontiercode": 0.0,
+      "aa-lcr": 52.0,
+      "aa-mrcr": 1.7
+    },
+    "gpt-oss-120b-low": {
+      "aa-lcr": 46.0
+    },
+    "gpt-oss-20b-high": {
+      "aa-terminal-bench": 0.0,
+      "aa-lcr": 34.7,
+      "aa-mrcr": 1.1
+    },
+    "gpt-oss-20b-low": {
+      "aa-lcr": 31.0
+    },
+    "gemma4:12b": {
+      "aa-lcr": 63.7
+    },
+    "gemma4:12b-non-reasoning": {
+      "aa-lcr": 35.0
+    },
+    "gpt-oss-120b-medium": {},
+    "gpt-6.1-sol": {
+      "aa-intelligence": 50.3,
+      "aa-terminal-bench": 51.5,
+      "aa-frontiercode": 36.7,
+      "aa-lcr": 82.3,
+      "aa-mrcr": 31.7,
+      "minutes_per_task": 6.6,
+      "output_tokens_per_task": 22606.0
+    },
+    "gpt-6-astra": {
+      "aa-intelligence": 54.8,
+      "aa-terminal-bench": 54.0,
+      "aa-frontiercode": 40.1,
+      "aa-lcr": 80.0,
+      "aa-mrcr": 32.8,
+      "minutes_per_task": 8.2,
+      "output_tokens_per_task": 23133.0
+    },
+    "gpt-6.1-terra": {
+      "aa-intelligence": 42.4,
+      "aa-terminal-bench": 41.9,
+      "aa-frontiercode": 37.5,
+      "aa-lcr": 82.3,
+      "minutes_per_task": 3.8,
+      "output_tokens_per_task": 16746.0,
+      "aa-coding-agent": 0.463
+    },
+    "gpt-6-luna": {
+      "aa-intelligence": 21.4,
+      "aa-terminal-bench": 4.5,
+      "aa-frontiercode": 18.6,
+      "aa-lcr": 79.3,
+      "aa-mrcr": 19.4,
+      "minutes_per_task": 5.6,
+      "output_tokens_per_task": 32839.0
+    }
+  }
+}

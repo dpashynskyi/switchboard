@@ -1,0 +1,446 @@
+{
+  "models": {
+    "gemini-4-argon-high": {
+      "provider": "agy"
+    },
+    "gemini-3.8-flash-high": {
+      "provider": "agy"
+    },
+    "gemini-3.8-flash-low": {
+      "provider": "agy"
+    },
+    "gpt-oss-120b-medium": {
+      "provider": "agy"
+    },
+    "claude-opus-5-5-high": {
+      "provider": "agy"
+    },
+    "claude-sonnet-5-5-medium": {
+      "provider": "agy"
+    },
+    "claude-sonnet-5-5-high": {
+      "provider": "agy"
+    },
+    "qwen3:14b": {
+      "provider": "ollama"
+    },
+    "gemma4:12b": {
+      "provider": "ollama"
+    },
+    "gpt-oss:20b": {
+      "provider": "ollama"
+    }
+  },
+  "subscription_models": [
+    "claude-fable-5-1",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5"
+  ],
+  "roles": {
+    "review": {
+      "models": [
+        {
+          "provider": "agy",
+          "model": "gemini-4-argon-high"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "provider": "agy",
+          "model": "gemini-3.8-flash-high"
+        }
+      ],
+      "score": {
+        "mode": "live",
+        "metrics": [
+          "aa-frontiercode",
+          "aa-terminal-bench",
+          "benchlm-coding"
+        ],
+        "time": 0.5,
+        "cost": 0.3,
+        "time_budget_s": 900,
+        "aa_time_scale": 0.6
+      }
+    },
+    "second-opinion": {
+      "models": [
+        {
+          "provider": "agy",
+          "model": "gemini-3.8-flash-high"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "provider": "agy",
+          "model": "gemini-4-argon-high"
+        },
+        {
+          "provider": "agy",
+          "model": "gpt-oss-120b-medium"
+        },
+        {
+          "provider": "agy",
+          "model": "claude-sonnet-5-5-medium"
+        }
+      ],
+      "score": {
+        "mode": "shadow",
+        "metrics": [
+          "aa-intelligence"
+        ],
+        "time": 0.6,
+        "cost": 0.3,
+        "time_budget_s": 300,
+        "aa_time_scale": 0.2
+      }
+    },
+    "first-read": {
+      "models": [
+        {
+          "provider": "ollama",
+          "model": "qwen3:14b"
+        },
+        {
+          "provider": "agy",
+          "model": "gemini-3.8-flash-high"
+        }
+      ],
+      "score": {
+        "mode": "shadow",
+        "metrics": [
+          "arena-text",
+          "aa-lcr"
+        ],
+        "time": 0.2,
+        "cost": 1.0,
+        "time_budget_s": 600,
+        "aa_time_scale": 0.3
+      }
+    },
+    "draft": {
+      "models": [
+        {
+          "provider": "ollama",
+          "model": "gemma4:12b"
+        },
+        {
+          "provider": "ollama",
+          "model": "qwen3:14b"
+        },
+        {
+          "provider": "agy",
+          "model": "gemini-3.8-flash-low"
+        }
+      ],
+      "score": {
+        "mode": "shadow",
+        "metrics": [
+          "arena-text",
+          "aa-lcr"
+        ],
+        "time": 0.2,
+        "cost": 1.0,
+        "time_budget_s": 600,
+        "aa_time_scale": 0.3
+      }
+    },
+    "writer": {
+      "models": [
+        {
+          "provider": "agy",
+          "model": "gemini-4-argon-high"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "provider": "agy",
+          "model": "claude-sonnet-5-5-high"
+        },
+        {
+          "provider": "agy",
+          "model": "claude-opus-5-5-high"
+        },
+        {
+          "provider": "claude-subscription",
+          "model": "claude-opus-5-5"
+        }
+      ],
+      "exit_code": 6,
+      "score": {
+        "mode": "shadow",
+        "metrics": [
+          "aa-coding-agent",
+          "benchlm-coding"
+        ],
+        "time": 0.2,
+        "cost": 0.5,
+        "time_budget_s": 3600,
+        "aa_time_scale": 1.0
+      }
+    },
+    "analysis": {
+      "needs": [
+        "big-files"
+      ],
+      "models": [
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "provider": "agy",
+          "model": "gemini-4-argon-high"
+        },
+        {
+          "provider": "claude-subscription",
+          "model": "claude-opus-5-5"
+        }
+      ],
+      "no_engine": true,
+      "exit_code": 6,
+      "score": {
+        "mode": "shadow",
+        "metrics": [
+          "aa-lcr",
+          "aa-mrcr",
+          "benchlm-coding"
+        ],
+        "time": 0.2,
+        "cost": 0.5,
+        "time_budget_s": 3600,
+        "aa_time_scale": 1.0
+      }
+    },
+    "code-writer": {
+      "models": [
+        {
+          "provider": "codex",
+          "model": "gpt-6-astra"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "provider": "agy",
+          "model": "gemini-4-argon-high"
+        },
+        {
+          "provider": "agy",
+          "model": "claude-sonnet-5-5-high"
+        },
+        {
+          "provider": "claude-subscription",
+          "model": "claude-sonnet-5-5"
+        }
+      ],
+      "no_engine": true,
+      "exit_code": 6,
+      "score": {
+        "mode": "shadow",
+        "metrics": [
+          "aa-coding-agent",
+          "benchlm-coding"
+        ],
+        "time": 0.2,
+        "cost": 0.5,
+        "time_budget_s": 3600,
+        "aa_time_scale": 1.0
+      }
+    },
+    "engine-writer": {
+      "needs": [
+        "engine"
+      ],
+      "models": [
+        {
+          "provider": "claude-subscription",
+          "model": "claude-sonnet-5-5"
+        }
+      ],
+      "exit_code": 6
+    },
+    "index": {
+      "models": [
+        {
+          "provider": "ollama",
+          "model": "qwen3:14b"
+        },
+        {
+          "provider": "ollama",
+          "model": "gpt-oss:20b"
+        }
+      ],
+      "local_only": true
+    }
+  },
+  "traits": {
+    "cannot": {
+      "codex": {
+        "win32": [
+          "python",
+          "engine"
+        ]
+      },
+      "ollama": {
+        "*": [
+          "python",
+          "engine",
+          "big-files"
+        ]
+      }
+    }
+  },
+  "experience": {
+    "enabled": true,
+    "values": {
+      "ok": 1.0,
+      "fixed": 0.6,
+      "rejected": 0.0,
+      "capped": 0.2,
+      "timeout": 0.2
+    },
+    "prior": {
+      "scale": 0.5,
+      "center": 0.75,
+      "lo": 0.3,
+      "hi": 0.7
+    },
+    "prior_weight": 2,
+    "other_role_weight": 0.25,
+    "window_days": 30,
+    "min_evidence": 2,
+    "demote_below": 0.5,
+    "demote_twice_below": 0.35,
+    "promote_min_evidence": 3,
+    "promote_above": 0.8,
+    "probation_verdicts": 3,
+    "probation_tokens": 200000,
+    "role_category": {
+      "review": "code",
+      "analysis": "code",
+      "code-writer": "code",
+      "writer": "code",
+      "second-opinion": "code"
+    }
+  },
+  "capabilities": {
+    "gemini-4-argon-high": [
+      {
+        "task": "code",
+        "note": "wrote the router in five passes; tests passed each pass; missed that agy's usage of a carried-on conversation is a running total",
+        "evidence": "conversation 774f8ee9, router commits c82dd64",
+        "date": "2026-11-03"
+      }
+    ],
+    "gpt-6.1-sol": [
+      {
+        "task": "code",
+        "note": "wrote the Codex provider and the removal of nicknames; tests passed when run by the coordinator; one gap (an id no live list knows, not looked up in the roles)",
+        "evidence": "threads 01a1a382, 01a1a38e; commits 6987749, a130901",
+        "date": "2026-11-03"
+      },
+      {
+        "task": "code",
+        "note": "its Windows sandbox cannot start Python: it cannot run tests",
+        "evidence": "both runs",
+        "date": "2026-11-03"
+      }
+    ],
+    "gemini-3.8-flash-high": [
+      {
+        "task": "second-opinion",
+        "note": "as an agent it may reach for a tool and answer nothing; asked for words only, it answers",
+        "evidence": "ask.py logs",
+        "date": "2026-11-03"
+      }
+    ],
+    "qwen3:14b": [
+      {
+        "task": "figures",
+        "note": "reads tables cell by cell, but writes a mean's sd as a value of its own; with a task prompt it takes the text's findings and skips tables",
+        "evidence": "models/qwen3-14b-pro/README.md",
+        "date": "2026-11-03"
+      },
+      {
+        "task": "translation/ukrainian",
+        "note": "weak: 'lime nectar' became 'цитрусовою пилкою'",
+        "evidence": "general test",
+        "date": "2026-11-03"
+      }
+    ]
+  },
+  "tokens_default": {
+    "writer": 300000,
+    "analysis": 500000,
+    "code-writer": 300000,
+    "review": 60000,
+    "second-opinion": 20000,
+    "first-read": 80000,
+    "draft": 20000,
+    "index": 40000,
+    "default": 20000
+  },
+  "cache_weight": {
+    "ChatGPT": 0.1,
+    "Gemini Models": 0.0,
+    "Claude and GPT models": 0.0,
+    "default": 0.0
+  },
+  "rate_default": {
+    "Gemini Models": {
+      "weekly": 0.05,
+      "5h": 0.15
+    },
+    "ChatGPT": {
+      "weekly": 0.05,
+      "5h": 0.15
+    },
+    "Claude and GPT models": {
+      "weekly": 0.05,
+      "5h": 0.15
+    },
+    "default": {
+      "weekly": 0.05,
+      "5h": 0.15
+    }
+  },
+  "pool_covers": {
+    "Gemini Models": [
+      "gemini-*"
+    ],
+    "ChatGPT": [
+      "gpt-6*",
+      "gpt-5.6*"
+    ],
+    "Claude and GPT models": [
+      "claude-*",
+      "gpt-oss-*"
+    ]
+  },
+  "floors": {
+    "weekly": 0.1,
+    "5h": 0.1
+  },
+  "pace_skip": 2.0,
+  "never": [],
+  "never_reason": "model is in roles.json never list",
+  "score_defaults": {
+    "owner_step": 0.03,
+    "owner_cap": 0.1,
+    "prior_runs": 2,
+    "size_clamp": [
+      0.5,
+      3
+    ]
+  },
+  "_comment": "A frozen copy of a roles.json for the tests: the tests read this file (ASK_ROLES), not the live roles.json, so a change of order there does not move them."
+}
