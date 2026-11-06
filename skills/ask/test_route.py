@@ -1366,7 +1366,7 @@ class WriterTests(unittest.TestCase):
         for provider_flags in ([], ["--codex"]):
             with self.subTest(provider_flags=provider_flags), \
                  mock.patch.dict(os.environ, {"ASK_ROUTE_FAKE": json.dumps(self.state()), "NO_COLOR": "1"}), \
-                 mock.patch.object(route.sys, "platform", "win32"), \
+                 mock.patch.object(route, "host_platform", return_value="win32"), \
                  mock.patch.object(route, "check_name", wraps=route.check_name) as check, \
                  mock.patch.object(writer.subprocess, "Popen") as launch, \
                  mock.patch.object(sys, "stderr", io.StringIO()) as errors:
@@ -2253,7 +2253,7 @@ class ProviderTests(unittest.TestCase):
                          {"kind": "apple", "model_budget_gb": 12})
         for platform, tools, kind in (("darwin", (), "apple"), ("win32", ("nvidia-smi",), "nvidia"),
                                       ("linux", ("rocm-smi",), "amd"), ("linux", (), "unified"), ("win32", (), "unified")):
-            with self.subTest(platform=platform, tools=tools), mock.patch.object(route.sys, "platform", platform), \
+            with self.subTest(platform=platform, tools=tools), mock.patch.object(route, "host_platform", return_value=platform), \
                  mock.patch.object(route.shutil, "which", side_effect=lambda name: name if name in tools else None), \
                  mock.patch.object(route, "_ram_bytes", return_value=16 * 1024 ** 3):
                 gpu = route.machine_gpu({})
@@ -2637,7 +2637,7 @@ class TraitsTests(unittest.TestCase):
     def test_writer_passes_codex_over_only_on_windows(self):
         for need in ("engine", "python"):
             for platform in ("win32", "linux"):
-                with self.subTest(need=need, platform=platform), mock.patch.object(route.sys, "platform", platform), \
+                with self.subTest(need=need, platform=platform), mock.patch.object(route, "host_platform", return_value=platform), \
                      mock.patch.object(route, "_check_allowed", wraps=route._check_allowed) as allowed, \
                      mock.patch.object(route, "reserve_quota") as reserve:
                     result = route.pick("writer", needs=[need], rules=self.rules, fake=self.state, context="personal")
@@ -2652,7 +2652,7 @@ class TraitsTests(unittest.TestCase):
 
     def test_all_cloud_candidates_lacking_fall_back_to_subscription(self):
         self.rules["traits"]["cannot"]["agy"] = {"*": ["engine"]}
-        with mock.patch.object(route.sys, "platform", "win32"):
+        with mock.patch.object(route, "host_platform", return_value="win32"):
             result = route.pick("writer", needs=["engine"], rules=self.rules, fake=self.state, context="personal")
         self.assertTrue(result["fallback"])
         self.assertEqual(result["exit_code"], 6)
@@ -2672,7 +2672,7 @@ class TraitsTests(unittest.TestCase):
 
     def test_named_model_cannot_even_when_forced_or_role_needs_only(self):
         for kwargs in ({"needs": ["engine"], "force": True}, {"role": "engine-writer"}):
-            with self.subTest(kwargs=kwargs), mock.patch.object(route.sys, "platform", "win32"), \
+            with self.subTest(kwargs=kwargs), mock.patch.object(route, "host_platform", return_value="win32"), \
                  mock.patch.object(route, "_check_allowed") as allowed:
                 result = route.check_name({"provider": "codex", "model": "gpt-6.1-sol"}, rules=self.rules,
                                           fake=self.state, context="personal", **kwargs)
@@ -2698,12 +2698,12 @@ class TraitsTests(unittest.TestCase):
                 launch.assert_not_called()
 
     def test_wait_rechecks_preserve_needs(self):
-        with mock.patch.object(route.sys, "platform", "win32"):
+        with mock.patch.object(route, "host_platform", return_value="win32"):
             result = route.wait_until_free(role="writer", needs=["engine"], rules=self.rules,
                                            fake=self.state, context="personal", stream=io.StringIO())
         self.assertEqual(result["model"], "gemini-4-argon-high")
         self.assertIn("gpt-6.1-sol cannot engine here (traits in roles.json)", result["passed_over"])
-        with mock.patch.object(route.sys, "platform", "win32"), mock.patch.object(route.time, "sleep") as sleep:
+        with mock.patch.object(route, "host_platform", return_value="win32"), mock.patch.object(route.time, "sleep") as sleep:
             result = route.wait_until_free(name={"provider": "codex", "model": "gpt-6.1-sol"}, needs=["engine"],
                                            rules=self.rules, fake=self.state, context="personal", stream=io.StringIO())
         self.assertEqual(result["status"], "cannot")
@@ -2719,7 +2719,7 @@ class TraitsTests(unittest.TestCase):
                 if named:
                     args += ["--model", "gemini-4-argon-high", "--agy"]
                 with mock.patch.dict(os.environ, {"ASK_ROUTE_FAKE": json.dumps(self.state), "NO_COLOR": "1"}), \
-                     mock.patch.object(route.sys, "platform", "win32"), \
+                     mock.patch.object(route, "host_platform", return_value="win32"), \
                      mock.patch.object(route, "load_roles", return_value=self.rules), \
                      mock.patch.object(route, "pick", wraps=route.pick) as pick, \
                      mock.patch.object(route, "check_name", wraps=route.check_name) as check, \
@@ -2738,7 +2738,7 @@ class TraitsTests(unittest.TestCase):
 
     def test_ask_named_refusal_and_role_forwarding(self):
         with mock.patch.dict(os.environ, {"ASK_ROUTE_FAKE": json.dumps(self.state), "NO_COLOR": "1"}), \
-             mock.patch.object(route.sys, "platform", "win32"), \
+             mock.patch.object(route, "host_platform", return_value="win32"), \
              mock.patch.object(sys, "argv", ["ask.py", "--codex", "gpt-6.1-sol", "--needs", "engine", "question"]), \
              mock.patch.object(ask, "ask_codex") as launch, \
              mock.patch.object(sys, "stderr", io.StringIO()) as errors:
@@ -2747,7 +2747,7 @@ class TraitsTests(unittest.TestCase):
         launch.assert_not_called()
         self.rules["traits"]["cannot"]["agy"] = {"*": ["engine"]}
         with mock.patch.dict(os.environ, {"ASK_ROUTE_FAKE": json.dumps(self.state), "NO_COLOR": "1"}), \
-             mock.patch.object(route.sys, "platform", "win32"), \
+             mock.patch.object(route, "host_platform", return_value="win32"), \
              mock.patch.object(route, "load_roles", return_value=self.rules), \
              mock.patch.object(sys, "argv", ["ask.py", "--role", "writer", "--needs", "engine", "question"]), \
              mock.patch.object(sys, "stderr", io.StringIO()) as errors:
@@ -2759,7 +2759,7 @@ class TraitsTests(unittest.TestCase):
         for notes in (False, True):
             with self.subTest(notes=notes), \
                  mock.patch.dict(os.environ, {"ASK_ROUTE_FAKE": json.dumps(self.state), "NO_COLOR": "1"}), \
-                 mock.patch.object(route.sys, "platform", "win32"), \
+                 mock.patch.object(route, "host_platform", return_value="win32"), \
                  mock.patch.object(sys, "argv", ["ask.py", "--list"] + (["--notes"] if notes else [])), \
                  mock.patch.object(sys, "stdout", io.StringIO()) as output:
                 self.assertEqual(ask.main(), 0)
@@ -2768,6 +2768,21 @@ class TraitsTests(unittest.TestCase):
                 self.assertIn("cannot here: python, engine, big-files", output.getvalue())
             else:
                 self.assertNotIn("cannot here:", output.getvalue())
+
+    def test_no_test_patches_sys_platform(self):
+        import glob
+        import re
+        # patch.object on any sys with the attribute name platform, any spacing; and patch on the dotted name.
+        leak = re.compile(r"""\bsys\s*,\s*["']platform["']|["']sys\.platform["']""")
+        for sample in ("route.sys" + ',"platform"', "sys" + " , 'platform'", '"sys' + '.platform"'):
+            self.assertRegex(sample, leak)
+        paths = sorted(glob.glob(os.path.join(HERE, "test_*.py")) + glob.glob(os.path.join(TOOLS_DIR, "test_*.py")))
+        self.assertTrue(paths)
+        for path in paths:
+            with open(path, encoding="utf-8") as handle:
+                found = leak.search(handle.read())
+            self.assertIsNone(found, f"{os.path.basename(path)} patches sys.platform ({found and found.group(0)}); "
+                                     "patch route.host_platform instead")
 
 
 if __name__ == "__main__":

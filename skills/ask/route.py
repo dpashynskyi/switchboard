@@ -2099,7 +2099,7 @@ def machine_gpu(machine=None):
     gpu = dict(hw.get("gpu")) if isinstance(hw.get("gpu"), dict) else {}
     if gpu.get("kind"):
         gpu["kind"] = str(gpu["kind"]).lower()
-    elif sys.platform == "darwin":
+    elif host_platform() == "darwin":
         gpu["kind"] = "apple"
     elif shutil.which("nvidia-smi"):
         gpu["kind"], gpu["_guessed"] = "nvidia", True
@@ -2997,12 +2997,19 @@ def role_needs(role, needs, rules):
     return sorted(set(spec.get("needs", [])) | set(needs or []))
 
 
+def host_platform():
+    """The platform the router judges for: the traits in roles.json (cannot) and the GPU guess. Tests patch this,
+    never sys.platform: the standard library reads sys.platform too (Python 3.14's shutil.which calls _winapi when
+    it says win32)."""
+    return sys.platform
+
+
 def cannot(provider, model_id, rules=None, platform=None):
     """The session's tools are available to its subagent; other limits add up."""
     if provider == "claude-subscription":
         return set()
     rules = load_roles() if rules is None else rules
-    platform = sys.platform if platform is None else platform
+    platform = host_platform() if platform is None else platform
     traits = (rules.get("traits") or {}).get("cannot") or {}
     result = set()
     # "local" holds for every local provider (Ollama, a local server), beside the provider's own name and the model's.
