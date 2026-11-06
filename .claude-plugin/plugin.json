@@ -1,6 +1,6 @@
 {
   "name": "switchboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ask another model from Claude Code: one router over agy, Codex and Ollama with weekly-quota awareness, roles, a permission-policy broker for writer agents and a limits band",
   "license": "MIT",
   "types": "./types/index.d.ts"
