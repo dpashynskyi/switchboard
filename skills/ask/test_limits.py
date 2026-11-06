@@ -93,6 +93,18 @@ class LimitsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             limits.write_claude_usage(json.dumps({"plan": {"status": "unavailable"}}), os.devnull)
 
+    def test_claude_json_from_stdin_is_utf8_whatever_the_console(self):
+        import io
+        from unittest import mock
+        reply = {"plan": "Ultra", "windows": [{"label": "Weekly · all models", "percentUsed": 17}]}
+        # A Ukrainian Windows reads a pipe as cp1251: "·" came out as "В·".
+        stdin = io.TextIOWrapper(io.BytesIO(json.dumps(reply, ensure_ascii=False).encode("utf-8")), encoding="cp1251")
+        with mock.patch("sys.stdin", stdin), mock.patch.object(limits, "table", return_value=""), \
+                mock.patch("sys.stdout", io.StringIO()):
+            self.assertEqual(limits.main(["--claude-json", "-"]), 0)
+        with open(route.CLAUDE_USAGE_PATH, encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["windows"][0]["label"], "Weekly · all models")
+
 
 if __name__ == "__main__":
     unittest.main()

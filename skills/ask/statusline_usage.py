@@ -142,8 +142,13 @@ def main(stdin_text, now=None):
 
 
 if __name__ == "__main__":
+    # Claude Code speaks UTF-8 both ways, whatever the console's code page (cp1251 on a Ukrainian Windows).
     try:
-        stdin_text = sys.stdin.read()
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
+    try:
+        stdin_text = sys.stdin.buffer.read().decode("utf-8-sig", errors="replace")
     except Exception:
         stdin_text = ""
     sys.exit(main(stdin_text))

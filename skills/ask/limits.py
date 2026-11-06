@@ -169,7 +169,10 @@ def main(argv=None):
     ap.add_argument("--claude-json", help="get_usage's reply to store first: a file, or - for stdin")
     a = ap.parse_args(argv)
     if a.claude_json:
-        raw = sys.stdin.read() if a.claude_json == "-" else open(a.claude_json, encoding="utf-8").read()
+        # The reply is UTF-8 whatever the console's code page: read as cp1251, "Weekly · all models" was stored
+        # as "Weekly В· all models".
+        raw = (sys.stdin.buffer.read().decode("utf-8-sig", errors="replace") if a.claude_json == "-"
+               else open(a.claude_json, encoding="utf-8-sig").read())
         write_claude_usage(raw)
     print(table())
     return 0
