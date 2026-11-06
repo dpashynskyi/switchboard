@@ -70,14 +70,29 @@ function stateCell(p: BandPool): string {
 
 let isRunning = false
 
+// The folder that holds skills/ask and this mod: SWITCHBOARD_ROOT, else the usual clone in the home folder.
+async function rootOf($: EngineInterface): Promise<string> {
+  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
+  return (await $.env.get('SWITCHBOARD_ROOT')) ?? `${home}/switchboard`
+}
+
+// The Claude week as the engine read it from the last response, stored where the router and band.py read it. The
+// desktop app runs no status line, so without this its Claude numbers waited for a /limits. statusline_usage.py
+// takes the status line's shape, keeps the other windows and writes nothing when the number has not moved.
+async function storeClaudeWeek($: EngineInterface, week: { percentUsed: number; resetsAt?: string }): Promise<void> {
+  try {
+    const stdin = JSON.stringify({ rate_limits: { seven_day: { used_percentage: week.percentUsed, resets_at: week.resetsAt } } })
+    await $.process.run(['python', `${await rootOf($)}/skills/ask/statusline_usage.py`], { stdin, timeoutMs: 30_000 })
+  } catch {
+    // The next turn's reading tries again; /limits still writes the same file.
+  }
+}
+
 async function refresh($: EngineInterface): Promise<void> {
     if (isRunning) return
     isRunning = true
     try {
-      const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
-      // The folder that holds skills/ask and this mod: SWITCHBOARD_ROOT, else the usual clone in the home folder.
-      const root = (await $.env.get('SWITCHBOARD_ROOT')) ?? `${home}/switchboard`
-      const script = `${root}/mods/limits-band/band.py`
+      const script = `${await rootOf($)}/mods/limits-band/band.py`
       const sessionId = await $.session.id()
       const ran = await $.process.run(['python', script, '--session', sessionId], { timeoutMs: 90_000 })
       if (ran.exitCode !== 0) {
@@ -106,6 +121,14 @@ export const register: Register = on => {
     await update($, isHidden, () => stored === true)
     void refresh($)
     $.clock.every(REFRESH_MS, () => void refresh($))
+
+    return next(e)
+  })
+
+  // After each turn, and when a window moves a whole point.
+  on('session.measure', async ($, e, next) => {
+    const week = e.rateLimits.find(r => r.kind === 'seven_day')
+    if (week) void storeClaudeWeek($, week)
 
     return next(e)
   })

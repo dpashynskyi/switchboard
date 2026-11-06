@@ -26,14 +26,16 @@ const SAMPLE = {
   sessions: { working: 2, idle: 1 },
 }
 
-function engine(on: Parameters<Parameters<typeof test>[1]>[1], stdout: string, exitCode = 0, runs = { count: 0 }) {
+type Runs = { count: number; calls?: { argv: readonly string[]; stdin?: string }[] }
+
+function engine(on: Parameters<Parameters<typeof test>[1]>[1], stdout: string, exitCode = 0, runs: Runs = { count: 0 }) {
   const clock = mock.clock(on)
   mock.store(on)
   mock.env(on, { USERPROFILE: 'C:/Users/someone', ASK_LANG: 'uk' })
   on('command.register', () => ({ value: { command: 'limits-band' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'cli-1' }))
-  on('process.run', () => (runs.count++, {
+  on('process.run', (_, e) => (runs.count++, runs.calls?.push({ argv: e.argv, stdin: e.init?.stdin }), {
     value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
 
@@ -106,6 +108,28 @@ test('the script runs once at the start and then once a minute, no oftener', asy
   expect(runs.count).toBe(2)
   await clock.advance(60_000)
   expect(runs.count).toBe(3)
+})
+
+test("the engine's Claude week after a turn goes to the status line's script, and nothing else does", async ($, on) => {
+  const calls: NonNullable<Runs['calls']> = []
+  const clock = engine(on, JSON.stringify(SAMPLE), 0, { count: 0, calls })
+  on('session.measure', (_, e) => ({ changed: e.changed }))  // the engine's own echo, beneath the mod
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  calls.length = 0
+
+  const context = { window: 1_000_000 }
+  await $.session.measure({ context, rateLimits: [{ kind: 'five_hour', percentUsed: 3 }], changed: [] })
+  await clock.settle()
+  expect(calls.length).toBe(0)
+
+  await $.session.measure({ context, changed: [], rateLimits: [
+    { kind: 'five_hour', percentUsed: 3 }, { kind: 'seven_day', percentUsed: 18, resetsAt: '2026-11-12T16:59:59Z' }] })
+  await clock.settle()
+  expect(calls.length).toBe(1)
+  expect(calls[0]!.argv).toEqual(['python', 'C:/Users/someone/switchboard/skills/ask/statusline_usage.py'])
+  expect(JSON.parse(calls[0]!.stdin ?? '')).toEqual(
+    { rate_limits: { seven_day: { used_percentage: 18, resets_at: '2026-11-12T16:59:59Z' } } })
 })
 
 test('the collapsed line puts the pools of a provider together and counts sessions in Ukrainian', async ($, on) => {
