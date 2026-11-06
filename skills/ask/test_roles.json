@@ -440,6 +440,10 @@
   "never": [],
   "never_reason": "model is in roles.json never list",
   "score_defaults": {
+    "burn_floor": 0.1,
+    "recent_hours": 24,
+    "history_min_span_h": 2,
+    "history_min_gap_s": 600,
     "owner_step": 0.03,
     "owner_cap": 0.1,
     "prior_runs": 2,

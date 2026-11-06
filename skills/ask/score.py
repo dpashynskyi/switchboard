@@ -6,6 +6,8 @@ Model-role timeouts are censored: each contributes max(2 * seconds, prior or 0)
 to the same median/count blend as successful model-role seconds.
 Cost is weekly share / available quota * time left in week * max(1, pace).
 Thus quota expiring soon is cheaper; expiry enters exactly once.
+The price falls when, at the pool's rate over the last day, quota would be
+lost unused at the reset.
 """
 import math
 import statistics
@@ -101,7 +103,10 @@ def expected_tokens(role, provider, model, rows, rules, bench, size_factor=1., e
     return _blend(prior, [s for s in samples if s > 0], rules) * size_factor
 
 
-def cost_share(role, provider, model, rows, rules, bench, cs, size_factor=1., effort=None):
+def cost_share(role, provider, model, rows, rules, bench, cs, size_factor=1., effort=None,
+               history=None, details=None):
+    if details is not None:
+        details['unused'] = None
     if provider == 'ollama':
         return 0.
     if provider == 'claude-subscription':
@@ -116,10 +121,27 @@ def cost_share(role, provider, model, rows, rules, bench, cs, size_factor=1., ef
         available = max(1e-6, float(window.get('available_fraction', window.get('remaining_fraction', 1))))
         left = window.get('resets_in_s')
         fraction = min(1., max(0., left / (window.get('length_s') or 604800))) if left is not None else 1.
-        costs.append(tokens / 1e6 * rate / available * fraction * max(1., window.get('pace') or 0))
+        c = c0 = tokens / 1e6 * rate / available * fraction * max(1., window.get('pace') or 0)
+        unused = None
+        if history is not None:
+            now_ts = cs.get('now_ts', cs.get('fetched_at'))
+            if now_ts is None:
+                now_ts = route.time.time()
+            unused = route.projected_unused(window, route.recent_rate(
+                pool.get('label'), window, now_ts, rules, history=history))
+            share = tokens / 1e6 * rate
+            if unused is not None and share > 0:
+                floor = rules.get('score_defaults', {}).get('burn_floor', .1)
+                c *= floor + (1 - floor) * max(0., 1 - unused / share)
+        costs.append((c, unused, c0))
     # Unknown pools still have a default rate; absence of telemetry is not free quota.
-    return max(costs) if costs else tokens / 1e6 * route.pool_window_rate(
-        provider, rules=rules, fake={'journal': rows})
+    if costs:
+        c, unused, _ = max(costs, key=lambda entry: entry[0])
+        if details is not None:
+            details['unused'] = unused
+            details['c0'] = max(entry[2] for entry in costs)  # the dearest window before the discount, on its own
+        return c
+    return tokens / 1e6 * route.pool_window_rate(provider, rules=rules, fake={'journal': rows})
 
 
 def size_factor(role, prompt_tokens, rows, rules=None):
@@ -148,12 +170,18 @@ def rank(role, evaluated, rules, rows, bench, cs, prompt_tokens=None, weights=No
         effort = e.get('effort')
         q = quality(role, p, m, rows, rules, bench, effort)
         t = expected_seconds(role, p, m, rows, rules, bench, factor, effort)
-        c = cost_share(role, p, m, rows, rules, bench, e.get('_cs') or cs, factor, effort)  # another account's own pool
+        state = e.get('_cs') or cs  # another account's own pool
+        details = {}
+        c = cost_share(role, p, m, rows, rules, bench, state, factor, effort,
+                       history=state.get('pool_history'), details=details)
         index = owners.index((p, m)) if (p, m) in owners else len(owners)
         bonus = min(defaults.get('owner_cap', .10), max(0, len(owners) - index - 1) * defaults.get('owner_step', .03))
-        candidates.append(dict(e, score={'Q': q, 'seconds': t, 'budget': budget, 'C': c, 'bonus': bonus}, _owner=index))
+        candidates.append(dict(e, score={'Q': q, 'seconds': t, 'budget': budget, 'C': c,
+                                         'bonus': bonus, 'unused': details.get('unused'),
+                                         'C0': details.get('c0', c)}, _owner=index))
     # Filter before cost normalization: a disallowed slow model must not make others look cheap.
-    maximum = max((e['score']['C'] for e in candidates
+    # The scale is the dearest price before the burn discount, so a discount every candidate gets still counts.
+    maximum = max((e['score']['C0'] for e in candidates
                    if e['score']['seconds'] is None or e['score']['seconds'] <= budget), default=0)
     filtered, survivors = [], []
     for e in candidates:
@@ -169,5 +197,6 @@ def rank(role, evaluated, rules, rows, bench, cs, prompt_tokens=None, weights=No
     for e in survivors + filtered:
         s = e['score']
         t = '?' if s['seconds'] is None else f"~{s['seconds']/60:.1f}"
-        notes.append(f"{e['model']} {s['S']:.2f} (Q {s['Q']:.2f}, T {t}/{budget/60:g} min, C {s['C']*100:.2f}% wk)" + (f"; {e['reason']}" if not e['ok'] else ''))
+        burn = f", {s['unused']:.0%} would burn" if s['unused'] is not None and s['unused'] > 0 else ''
+        notes.append(f"{e['model']} {s['S']:.2f} (Q {s['Q']:.2f}, T {t}/{budget/60:g} min, C {s['C']*100:.2f}% wk{burn})" + (f"; {e['reason']}" if not e['ok'] else ''))
     return survivors, filtered, notes

@@ -67,7 +67,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `rate_default` | a pool window's share per 1M billed tokens until enough runs teach it |
 | `experience` | how far writer verdicts, capped runs and timeouts may move a role's order: `enabled`; `values` (what `ok`, `fixed`, `rejected`, `capped`, `timeout` are worth); `prior`, `prior_weight` (the start from `benchmarks.json`); `other_role_weight`, `role_category` (evidence from related roles); `window_days`, `min_evidence`; `demote_below`, `demote_twice_below`, `promote_min_evidence`, `promote_above`; `probation_verdicts`, `probation_tokens` (an expensive model with few verdicts) |
 | `capabilities` | notes on what a model did well or badly, with evidence; shown by `--list --notes` |
-| `score_defaults` | `owner_step`, `owner_cap` (the bonus for a row's place in the role's order), `prior_runs`, `size_clamp` |
+| `score_defaults` | `owner_step`, `owner_cap` (the bonus for a row's place in the role's order), `prior_runs`, `size_clamp`; `burn_floor` (minimum cost multiplier, 0.1), `recent_hours` (24), `history_min_span_h` (2), `history_min_gap_s` (600) |
 
 ## Environment variables
 
@@ -91,6 +91,6 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 ## Files it writes
 
 All under `~/.cache/ask/`: `usage.jsonl` (the journal, a row a call), `logs/` (raw output), `reasoning/` (reasoning
-summaries), `reservations.json` (running calls' quota shares), `claude_usage.json`, the providers' model and usage caches
+summaries), `reservations.json` (running calls' quota shares), `pool_history.json` (eight days of weekly remaining shares), `claude_usage.json`, the providers' model and usage caches
 (`agy_models.json`, `codex_models.json`, ...), `local.lock` (the GPU lock), `ask_last_conversation.json` (for
 `--continue`), `handoff/`.

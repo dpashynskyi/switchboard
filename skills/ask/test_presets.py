@@ -45,7 +45,7 @@ class PresetTests(unittest.TestCase):
         baseline = self.pick(rules=self.rules)
         with mock.patch.object(score, 'quality', return_value=.5), \
              mock.patch.object(score, 'expected_seconds', side_effect=lambda r,p,m,*a: 10 if p == 'codex' else 500), \
-             mock.patch.object(score, 'cost_share', side_effect=lambda r,p,m,*a: 1 if p == 'codex' else .01), \
+             mock.patch.object(score, 'cost_share', side_effect=lambda r,p,m,*a,**k: 1 if p == 'codex' else .01), \
              mock.patch.object(score, 'rank', wraps=score.rank) as rank:
             self.rules['roles']['review']['score']['mode'] = 'shadow'
             result = self.pick(rules=self.rules, preset='fast')

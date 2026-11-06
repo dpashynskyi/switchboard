@@ -29,6 +29,7 @@ ACCOUNTS_HOME = HOME  # where "~/.codex*" accounts are looked for; the tests poi
 CACHE_DIR = os.environ.get("ASK_CACHE_DIR") or os.path.join(HOME, ".cache", "ask")
 CONFIG_DIR = os.environ.get("ASK_CONFIG_DIR") or os.path.join(HOME, ".config", "ask")
 USAGE_CACHE = os.path.join(CACHE_DIR, "agy_usage.json")
+POOL_HISTORY = os.path.join(CACHE_DIR, "pool_history.json")
 AGY_MODELS_CACHE = os.path.join(CACHE_DIR, "agy_models.json")
 CODEX_USAGE_CACHE = os.path.join(CACHE_DIR, "codex_usage.json")
 CODEX_MODELS_CACHE = os.path.join(CACHE_DIR, "codex_models.json")
@@ -1613,6 +1614,103 @@ def _normalize_fake_pools(c, now_ts, rules=None):
     return pools, sub_meta
 
 
+def read_pool_history(path=None):
+    """History is advisory; missing or corrupt data means no recent estimate."""
+    try:
+        with open(path or POOL_HISTORY, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _window_reset_epoch(window, now_ts):
+    reset = _parse_iso_utc(window.get("reset_time") or window.get("resetsAt") or "")
+    if reset is not None:
+        return reset.timestamp()
+    left = window.get("resets_in_s")
+    return now_ts + left if left is not None else None
+
+
+def record_pool_history(pools, now_ts, path=None, rules=None):
+    """Record unreserved weekly shares, under a short advisory lock."""
+    path = os.path.abspath(path or POOL_HISTORY)
+    locked = False
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        locked = _acquire_file_lock(path + ".lock", timeout_s=.1)
+        if not locked:
+            return
+        history = read_pool_history(path)
+        old = sum(len(samples) for samples in history.values())
+        history = {label: [s for s in samples if s[0] >= now_ts - 8 * 86400]
+                   for label, samples in history.items()}
+        gap = (rules or load_roles()).get("score_defaults", {}).get("history_min_gap_s", 600)
+        changed = sum(len(samples) for samples in history.values()) != old
+        for pool in pools:
+            if pool.get("stale"):
+                continue
+            for window in pool.get("windows", []):
+                if "week" not in str(window.get("window") or "").lower():
+                    continue
+                samples = history.setdefault(pool["label"], [])
+                remaining = window["remaining_fraction"]
+                if not samples or now_ts - samples[-1][0] >= gap or abs(remaining - samples[-1][1]) > .001:
+                    samples.append([now_ts, remaining, _window_reset_epoch(window, now_ts)])
+                    changed = True
+        if changed:  # the band reads the pools every minute: no rewrite when nothing was added
+            _atomic_write_json(path, history)
+    except Exception:
+        pass
+    finally:
+        try:
+            if locked:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                _release_file_lock(path + ".lock")
+        except Exception:
+            pass
+
+
+def recent_rate(label, window, now_ts, rules, path=None, history=None):
+    """Share used per second in the newest uninterrupted recent window series."""
+    try:
+        data = read_pool_history(path) if history is None else history
+        defaults = rules.get("score_defaults", {})
+        cutoff = now_ts - defaults.get("recent_hours", 24) * 3600
+        reset = _window_reset_epoch(window, now_ts)
+        series = []
+        for sample in sorted(data.get(label, []), key=lambda s: s[0]):
+            ts, remaining, sample_reset = sample
+            if ts > now_ts:
+                continue
+            if reset is not None and sample_reset is not None and abs(reset - sample_reset) > 3600:
+                series = []
+                continue
+            if series and remaining - series[-1][1] > .02:
+                series = []
+            series.append(sample)
+        remaining = window.get("remaining_fraction", window.get("available_fraction", 1))
+        if series and remaining - series[-1][1] > .02:
+            return None
+        series = [s for s in series if s[0] >= cutoff]
+        if not series:
+            return None
+        span = now_ts - series[0][0]
+        if span <= 0 or span < defaults.get("history_min_span_h", 2) * 3600:
+            return None
+        return max(0., (series[0][1] - remaining) / span)
+    except Exception:
+        return None
+
+
+def projected_unused(window, rate):
+    left = window.get("resets_in_s")
+    if rate is None or left is None:
+        return None
+    return max(0., window.get("available_fraction", window.get("remaining_fraction", 1)) - rate * left)
+
+
 def cloud_state(fake=None, agy_path=None, force_refresh=False, ttl=60, now=None, rules=None, claude_usage_path=None, reservations_path=None,
                 account=None):
     """Return all quota pools (agy and Codex cached 60 s, plus ~/.cache/ask/claude_usage.json),
@@ -1640,6 +1738,8 @@ def cloud_state(fake=None, agy_path=None, force_refresh=False, ttl=60, now=None,
             "fetched_at": now_ts,
             "cached": False,
             "pools": pools,
+            "pool_history": c.get("pool_history") if isinstance(c, dict) else None,
+            "now_ts": now_ts,
             "reservations": res_list,
             "claude_subscription": sub_meta,
             "account": account,
@@ -1703,6 +1803,8 @@ def cloud_state(fake=None, agy_path=None, force_refresh=False, ttl=60, now=None,
         codex_error = str(e)
     sub_pools, sub_meta = load_claude_usage(claude_usage_path, now=now_ts)
     pools.extend(sub_pools)
+    record_pool_history(pools, now_ts, rules=rules)
+    pool_history = read_pool_history() or None
     res_list = read_reservations(reservations_path=reservations_path)
     _apply_reservations_to_pools(pools, res_list)
     return {
@@ -1711,6 +1813,8 @@ def cloud_state(fake=None, agy_path=None, force_refresh=False, ttl=60, now=None,
         "fetched_at": fetched_ts,
         "cached": cached_flag,
         "pools": pools,
+        "pool_history": pool_history,
+        "now_ts": now_ts,
         "reservations": res_list,
         "claude_subscription": sub_meta,
         "codex_error": codex_error,
