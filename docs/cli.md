@@ -80,7 +80,8 @@ usage: writer.py [-h] [--preset PRESET] [--cwd CWD] [--brief BRIEF] [--model MOD
                  [--needs NEEDS] [--force] [--python PYTHON] [--add-dir ADD_DIR] [--continue CONVERSATION]
                  [--log LOG] [--engine] [--allow-never] [--role ROLE] [--max-tokens MAX_TOKENS]
                  [--deadline DEADLINE] [--ask {human,never}] [--ask-timeout ASK_TIMEOUT]
-                 [--answer VALUE [VALUE ...]] [--agy | --codex] [--verdict ID VERDICT NOTE]
+                 [--todo-turns TODO_TURNS] [--answer VALUE [VALUE ...]] [--agy | --codex]
+                 [--verdict ID VERDICT NOTE]
                  [text]
 
 positional arguments:
@@ -112,6 +113,9 @@ options:
   --ask {human,never}   broker approvals (default: human)
   --ask-timeout ASK_TIMEOUT
                         seconds to wait for a human (default: 600)
+  --todo-turns TODO_TURNS
+                        turns that send the writer back while its plan has open items (default: 3; 0
+                        disables)
   --answer VALUE [VALUE ...]
                         <base> <option> [text]: answer a pending request
   --agy                 use agy for --model
