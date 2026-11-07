@@ -1,20 +1,24 @@
-"""On-demand, loopback-only quota dashboard."""
+"""On-demand, loopback-only quota dashboard, and a page that tunes the router's presets (/presets)."""
 
 import argparse
 from datetime import datetime, timedelta, timezone
+import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
 from pathlib import Path
+import secrets
 import sys
 import threading
 import time
+import urllib.parse
 import webbrowser
 
 # Isolated Python omits the script directory; use the adjacent router.
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
+import preset_edit
 import route
 
 
@@ -183,15 +187,7 @@ class StateStore:
             return self._state
 
 
-PAGE = r'''<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>Local limits</title>
-<style>
-:root {
+STYLE = r''':root {
   color-scheme: light;
   --surface: #fcfcfb; --background: #f3f3f0; --text: #0b0b0b; --secondary: #52514e;
   --border: #ddddd7; --grid: #eaeae5; --track: #e5e5df;
@@ -209,6 +205,7 @@ PAGE = r'''<!doctype html>
   }
 }
 * { box-sizing: border-box; }
+a { color: var(--series-1); }
 body { margin: 0; background: var(--background); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
 main { max-width: 1320px; margin: auto; padding: 28px 22px 48px; }
 h1 { margin: 0; font-size: 28px; letter-spacing: -.6px; }
@@ -253,11 +250,22 @@ td { overflow-wrap: anywhere; max-width: 260px; }
 td:first-child { white-space: nowrap; }
 .number { text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { main { padding: 18px 12px 32px; } .card, .panel { padding: 14px; } h1 { font-size: 24px; } }
-</style>
+'''
+
+
+PAGE = r'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Local limits</title>
+<style>
+__STYLE__</style>
 </head>
 <body>
 <main>
-<header><h1>Local limits</h1><p class="meta"><span id="stamp">Waiting for data</span> · refreshes every 60 s<span id="mode"></span></p>
+<header><h1>Local limits</h1><p class="meta"><span id="stamp">Waiting for data</span> · refreshes every 60 s<span id="mode"></span><span id="nav" hidden> · <a id="to-presets">Presets</a></span></p>
 <p id="notice" class="muted"></p><p id="error" role="status"></p></header>
 <section id="pools" aria-label="Quota pools and windows"></section>
 <section class="panel" id="gpu" aria-label="GPU and Ollama"><h2>GPU and Ollama</h2><p class="muted">Waiting for data</p></section>
@@ -389,8 +397,10 @@ function render(state) {
   if (!state.journal.length) { const row = el('tr'), cell = el('td', 'No journal entries.'); cell.colSpan = 8; row.append(cell); body.append(row); }
 }
 const snapshot = JSON.parse($('snapshot').textContent);
+/* The token rides in the address's fragment, which never reaches the server; the link to the presets page carries it on. */
 if (snapshot !== null) { $('mode').textContent = ' · snapshot (automatic refresh disabled)'; render(snapshot); }
 else {
+  $('to-presets').href = '/presets' + location.hash; $('nav').hidden = false;
   let loading = false, lastAttempt = 0;
   async function refresh() {
     if (document.hidden || loading || Date.now() - lastAttempt < 60000) return;
@@ -412,22 +422,335 @@ else {
 def page_html(state=None):
     # Escaping '<' prevents journal text from closing the JSON script element.
     data = json.dumps(finite(state), ensure_ascii=True, allow_nan=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    return PAGE.replace("__SNAPSHOT__", data)
+    return PAGE.replace("__STYLE__", STYLE).replace("__SNAPSHOT__", data)
 
 
-def make_server(port=8765, store=None):
+PRESETS_PAGE = r'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Presets</title>
+<style>
+__STYLE__
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+button { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--secondary); }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.tabs button[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+.small { padding: 2px 8px; font-size: 13px; }
+select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; max-width: 100%; min-width: 0; }
+#roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.rows { list-style: none; padding: 0; margin: 10px 0; }
+.rows li { display: flex; gap: 8px; align-items: center; padding: 6px 8px; margin: 4px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--background); }
+.rows li.dragging { opacity: .5; }
+.rows li.over { border-color: var(--series-1); }
+.rows .label { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.rows .place { color: var(--secondary); font-variant-numeric: tabular-nums; width: 1.4em; }
+.handle { cursor: grab; color: var(--secondary); user-select: none; }
+.off li { opacity: .65; border-style: dashed; }
+.add { display: flex; gap: 8px; align-items: center; }
+.add select { flex: 1; }
+.pick { font-size: 13px; overflow-wrap: anywhere; }
+.pick strong { font-weight: 650; }
+.slider { display: grid; grid-template-columns: 5.5em 1fr 6.5em; gap: 12px; align-items: center; margin: 10px 0; }
+.slider input { width: 100%; }
+.slider output { font-variant-numeric: tabular-nums; text-align: right; }
+.changed { color: var(--series-2); font-weight: 650; }
+#bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 18px; padding: 12px 0; background: var(--background); border-top: 1px solid var(--border); }
+#bar #dirty { margin-right: auto; }
+#message:empty { display: none; }
+@media (max-width: 600px) { .slider { grid-template-columns: 4.5em 1fr 4.5em; gap: 8px; } }
+</style>
+</head>
+<body>
+<main>
+<header><h1>Presets</h1><p class="meta"><a id="to-limits" href="/">Local limits</a> · <span id="where">Waiting for data</span></p>
+<p id="notice" class="muted"></p><p id="error" role="alert"></p></header>
+<div class="tabs" id="tabs" role="group" aria-label="Preset"></div>
+<section id="view" aria-live="polite"></section>
+<div id="bar"><span id="dirty" class="muted">No changes</span><span id="message" class="muted" role="status"></span>
+<button id="revert" type="button" disabled>Revert</button><button id="save" type="button" class="primary" disabled>Save</button></div>
+<noscript>This page needs JavaScript.</noscript>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+function el(tag, text, cls) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  if (cls) node.className = cls;
+  return node;
+}
+const clone = value => JSON.parse(JSON.stringify(value));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const WEIGHTS = [['quality', 'Quality', 2], ['time', 'Time', 3], ['cost', 'Cost', 3]];
+let token = '';
+const fromHash = new URLSearchParams(location.hash.slice(1)).get('token');
+if (fromHash) { token = fromHash; try { sessionStorage.setItem('switchboard-token', token); } catch (e) {} }
+else { try { token = sessionStorage.getItem('switchboard-token') || ''; } catch (e) {} }
+$('to-limits').href = '/' + (token ? '#token=' + encodeURIComponent(token) : '');
+let saved = null, draft = null, picks = null, current = null, previewTimer = null, previewSeq = 0;
+
+async function call(path, body) {
+  const options = body === undefined ? {cache: 'no-store'} : {method: 'POST', cache: 'no-store',
+    headers: {'Content-Type': 'application/json', 'X-Switchboard-Token': token}, body: JSON.stringify(body)};
+  const response = await fetch(path, options);
+  let data = null;
+  try { data = await response.json(); } catch (e) {}
+  if (!response.ok) { const error = new Error((data && data.error) || ('Local server returned ' + response.status)); error.status = response.status; throw error; }
+  return data;
+}
+function fromState(state) {
+  const out = {presets: {}, roles: {}};
+  for (const p of state.presets) if (p.weighted) out.presets[p.name] = clone(p.weights);
+  for (const r of state.roles) out.roles[r.name] = {rows: r.rows.map(x => x.row), off: r.off.map(x => x.row)};
+  return out;
+}
+function edits() {
+  const base = fromState(saved), list = [];
+  for (const [name, weights] of Object.entries(draft.presets)) {
+    if (same(weights, base.presets[name])) continue;
+    const changed = {};
+    for (const [key] of WEIGHTS) if (weights[key] !== null && weights[key] !== undefined) changed[key] = weights[key];
+    list.push({preset: name, weights: changed});
+  }
+  for (const [name, role] of Object.entries(draft.roles)) if (!same(role, base.roles[name])) list.push({role: name, rows: role.rows, off: role.off});
+  return list;
+}
+function label(row) {
+  const known = new Map();
+  for (const r of saved.roles) for (const x of r.rows.concat(r.off)) known.set(JSON.stringify(x.row), x.label);
+  if (known.has(JSON.stringify(row))) return known.get(JSON.stringify(row));
+  return row.model + ' · ' + row.provider;
+}
+function changedFlag() {
+  const list = edits();
+  $('dirty').textContent = list.length ? list.length + ' unsaved change' + (list.length > 1 ? 's' : '') : 'No changes';
+  $('dirty').className = list.length ? 'changed' : 'muted';
+  $('save').disabled = !list.length || !token; $('revert').disabled = !list.length;
+  return list;
+}
+function schedulePreview() {
+  const list = changedFlag();
+  clearTimeout(previewTimer);
+  if (!list.length) { picks = saved.picks; renderPicks(); return; }
+  if (!token) return;
+  previewTimer = setTimeout(async () => {
+    const seq = ++previewSeq;
+    document.querySelectorAll('.pick-value').forEach(node => node.classList.add('muted'));
+    try {
+      const result = await call('/api/presets/preview', {edits: list});
+      if (seq === previewSeq) { picks = result.picks; $('error').textContent = ''; renderPicks(); }
+    } catch (error) { if (seq === previewSeq) $('error').textContent = 'Preview failed: ' + error.message; }
+  }, 450);
+}
+function pickText(role, name) {
+  const row = (picks || {})[role];
+  if (!row) return '…';
+  const model = row.picks[name];
+  return model || ('none' + (row.note ? ' (' + row.note + ')' : ''));
+}
+function renderPicks() {
+  document.querySelectorAll('[data-pick-role]').forEach(node => {
+    node.textContent = pickText(node.dataset.pickRole, node.dataset.pickPreset); node.classList.remove('muted');
+  });
+}
+function renderTabs() {
+  const tabs = $('tabs'); tabs.replaceChildren();
+  for (const p of saved.presets) {
+    const button = el('button', p.name + (p.name === saved.active.preset ? ' (active)' : ''));
+    button.type = 'button'; button.setAttribute('aria-pressed', String(p.name === current));
+    button.addEventListener('click', () => { current = p.name; renderTabs(); renderView(); });
+    tabs.append(button);
+  }
+}
+function pickLine(role, name) {
+  const line = el('p', null, 'pick'); line.append(document.createTextNode('Would pick now: '));
+  const value = el('strong', pickText(role, name), 'pick-value');
+  value.dataset.pickRole = role; value.dataset.pickPreset = name; line.append(value);
+  return line;
+}
+function move(role, from, to) {
+  const rows = draft.roles[role].rows;
+  if (to < 0 || to >= rows.length || from === to) return;
+  rows.splice(to, 0, rows.splice(from, 1)[0]); renderView(); schedulePreview();
+}
+function roleCard(role) {
+  const card = el('article', null, 'card'), spec = draft.roles[role.name];
+  const heading = el('div', null, 'heading'); heading.append(el('h3', role.name));
+  if (role.own) heading.append(el('span', 'yours', 'muted details'));
+  card.append(heading, pickLine(role.name, 'manual'));
+  const list = el('ol', null, 'rows'); list.setAttribute('aria-label', role.name + ' rows in order');
+  spec.rows.forEach((row, index) => {
+    const item = el('li'); item.draggable = true;
+    item.append(el('span', '⋮⋮', 'handle'), el('span', index + 1, 'place'), el('span', label(row), 'label'));
+    const up = el('button', '↑', 'small'), down = el('button', '↓', 'small'), off = el('button', 'Off', 'small');
+    up.type = down.type = off.type = 'button';
+    up.setAttribute('aria-label', 'Move up'); down.setAttribute('aria-label', 'Move down'); off.setAttribute('aria-label', 'Switch off');
+    up.disabled = index === 0; down.disabled = index === spec.rows.length - 1; off.disabled = spec.rows.length === 1;
+    up.addEventListener('click', () => move(role.name, index, index - 1));
+    down.addEventListener('click', () => move(role.name, index, index + 1));
+    off.addEventListener('click', () => { spec.off.push(spec.rows.splice(index, 1)[0]); renderView(); schedulePreview(); });
+    item.append(up, down, off);
+    item.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', role.name + '\n' + index); event.dataTransfer.effectAllowed = 'move'; item.classList.add('dragging'); });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', event => { event.preventDefault(); item.classList.add('over'); });
+    item.addEventListener('dragleave', () => item.classList.remove('over'));
+    item.addEventListener('drop', event => {
+      event.preventDefault(); item.classList.remove('over');
+      const [from, at] = event.dataTransfer.getData('text/plain').split('\n');
+      if (from === role.name) move(role.name, Number(at), index);
+    });
+    list.append(item);
+  });
+  card.append(list);
+  if (spec.off.length) {
+    card.append(el('p', 'Switched off', 'muted details'));
+    const offList = el('ul', null, 'rows off');
+    spec.off.forEach((row, index) => {
+      const item = el('li'); item.append(el('span', label(row), 'label'));
+      const on = el('button', 'On', 'small'); on.type = 'button'; on.setAttribute('aria-label', 'Switch back on');
+      on.addEventListener('click', () => { spec.rows.push(spec.off.splice(index, 1)[0]); renderView(); schedulePreview(); });
+      item.append(on); offList.append(item);
+    });
+    card.append(offList);
+  }
+  const named = new Set(spec.rows.concat(spec.off).filter(r => r && r.model).map(r => r.provider + '\n' + r.model));
+  const free = saved.models.filter(m => !named.has(m.provider + '\n' + m.model));
+  if (free.length) {
+    const add = el('div', null, 'add'), select = el('select'), button = el('button', 'Add', 'small');
+    select.setAttribute('aria-label', 'A model of this machine to add to ' + role.name);
+    const hint = el('option', 'Add a model of this machine…'); hint.value = ''; select.append(hint);
+    for (const m of free) { const option = el('option', m.label); option.value = JSON.stringify({provider: m.provider, model: m.model}); select.append(option); }
+    button.type = 'button'; button.disabled = true;
+    select.addEventListener('change', () => { button.disabled = !select.value; });
+    button.addEventListener('click', () => { if (!select.value) return; spec.rows.push(JSON.parse(select.value)); renderView(); schedulePreview(); });
+    add.append(select, button); card.append(add);
+  }
+  return card;
+}
+function weightedView(name) {
+  const box = el('div'), panel = el('section', null, 'panel'), weights = draft.presets[name];
+  const base = fromState(saved).presets[name];
+  panel.append(el('h2', name), el('p', 'Weighted presets are shadow only for now: the router records what this one would pick and still calls the manual pick. Each sum is quality × Q − time × T − cost × C, per role; a weight left unset takes the role\'s own.', 'muted details'));
+  for (const [key, title, max] of WEIGHTS) {
+    const row = el('div', null, 'slider'), id = 'w-' + key;
+    const caption = el('label', title); caption.htmlFor = id;
+    const input = el('input'); input.type = 'range'; input.id = id; input.min = 0; input.step = 0.05;
+    input.max = Math.max(max, Number(weights[key]) || 0);
+    input.value = weights[key] === null || weights[key] === undefined ? 0 : weights[key];
+    const out = el('output'); out.htmlFor = id;
+    const show = () => {
+      const value = weights[key];
+      out.textContent = value === null || value === undefined ? "role's own" : Number(value).toFixed(2);
+      out.className = same(value, base[key]) ? '' : 'changed';
+    };
+    input.addEventListener('input', () => { weights[key] = Math.round(Number(input.value) * 100) / 100; show(); schedulePreview(); });
+    show(); row.append(caption, input, out); panel.append(row);
+  }
+  box.append(panel);
+  const table = el('section', null, 'panel'); table.append(el('h2', 'Whom each role would pick now'));
+  const scroll = el('div', null, 'table-scroll'), grid = el('table'), head = el('tr');
+  for (const text of ['Role', 'manual', name]) head.append(el('th', text));
+  const thead = el('thead'); thead.append(head); grid.append(thead);
+  const body = el('tbody');
+  for (const role of saved.roles) {
+    const tr = el('tr'); tr.append(el('td', role.name));
+    for (const preset of ['manual', name]) {
+      const td = el('td'), value = el('span', pickText(role.name, preset), 'pick-value');
+      value.dataset.pickRole = role.name; value.dataset.pickPreset = preset; td.append(value);
+      if (preset !== 'manual' && !role.scored) td.append(el('span', ' · no score: repeats manual', 'muted'));
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  grid.append(body); scroll.append(grid); table.append(scroll); box.append(table);
+  return box;
+}
+function renderView() {
+  const view = $('view'); view.replaceChildren();
+  if (current === 'manual') {
+    view.append(el('p', 'The manual preset is every role\'s rows in order: drag a row or use the arrows, switch one off (it stays, not called), or add a model of this machine. Claude subscription rows stay the last resort whatever their place.', 'muted details'));
+    const grid = el('section'); grid.id = 'roles';
+    for (const role of saved.roles) grid.append(roleCard(role));
+    view.append(grid);
+  } else {
+    view.append(weightedView(current));
+  }
+  renderPicks();
+}
+function load(state, keepView) {
+  saved = state; draft = fromState(state); picks = state.picks;
+  if (!keepView || !saved.presets.some(p => p.name === current)) current = state.active.preset;
+  $('where').textContent = state.path + (state.target !== state.path ? ' → ' + state.target : '') + ' · active: ' + state.active.preset + ' (' + state.active.source + ')';
+  const notes = [];
+  if (state.ignored) notes.push(state.ignored);
+  if (state.active.error) notes.push(state.active.error);
+  if (!token) notes.push('Open this page from the address the dashboard prints (it carries a token) to preview and save.');
+  $('notice').textContent = notes.join(' · ');
+  renderTabs(); renderView(); changedFlag();
+}
+async function reload(keepView) {
+  try { load(await call('/api/presets'), keepView); $('error').textContent = ''; }
+  catch (error) { $('error').textContent = 'Loading failed: ' + error.message; }
+}
+$('revert').addEventListener('click', () => { draft = fromState(saved); picks = saved.picks; renderView(); changedFlag(); $('message').textContent = ''; });
+$('save').addEventListener('click', async () => {
+  const list = edits(); if (!list.length) return;
+  $('save').disabled = true; $('message').textContent = 'Saving…';
+  try {
+    const result = await call('/api/presets/save', {edits: list, version: saved.version});
+    load(result.state, true);
+    $('message').textContent = 'Saved' + (result.backup ? '; the file before: ' + result.backup : '');
+  } catch (error) {
+    $('message').textContent = '';
+    $('error').textContent = (error.status === 409 ? 'Not saved: ' + error.message : 'Saving failed: ' + error.message);
+    changedFlag();
+  }
+});
+reload(false);
+</script>
+</body></html>
+'''
+
+
+def presets_html():
+    return PRESETS_PAGE.replace("__STYLE__", STYLE)
+
+
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+MAX_BODY = 256 * 1024
+
+
+def make_server(port=8765, store=None, editor=None, token=None):
+    """The dashboard on 127.0.0.1. Reads need a loopback Host; a write (the presets page's preview and save) needs, as
+    well, the token made at this start (the page has it from the address's fragment) and an Origin of this server,
+    so another page open in the browser cannot change the router's config."""
     state_store = store if store is not None else StateStore()
+    presets = editor if editor is not None else preset_edit.Editor()
+    secret = token if token is not None else secrets.token_urlsafe(24)
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            path = self.path.partition("?")[0]
+        def loopback(self):
             host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower().rstrip(".")
-            if host not in ("127.0.0.1", "localhost", "::1"):
+            if host not in LOOPBACK:
                 # A page on another site that resolves its name to 127.0.0.1 (DNS rebinding) must not read the state.
                 self.respond(403, "text/plain; charset=utf-8", b"Forbidden")
+                return False
+            return True
+
+        def do_GET(self):
+            path = self.path.partition("?")[0]
+            if not self.loopback():
                 return
             if path == "/":
                 self.respond(200, "text/html; charset=utf-8", page_html().encode("utf-8"))
+            elif path == "/presets":
+                self.respond(200, "text/html; charset=utf-8", presets_html().encode("utf-8"))
             elif path == "/api/state":
                 try:
                     body = json.dumps(finite(state_store.get()), ensure_ascii=True, allow_nan=False).encode("utf-8")
@@ -435,8 +758,65 @@ def make_server(port=8765, store=None):
                     self.respond(503, "application/json", b'{"error":"State gathering failed; retry in 60 seconds"}')
                     return
                 self.respond(200, "application/json; charset=utf-8", body)
+            elif path == "/api/presets":
+                try:
+                    self.json(200, presets.state())
+                except (OSError, ValueError) as e:
+                    self.json(503, {"error": f"Reading the roles failed: {e}"})
             else:
                 self.respond(404, "text/plain; charset=utf-8", b"Not found")
+
+        def do_POST(self):
+            path = self.path.partition("?")[0]
+            if not self.loopback():
+                return
+            origin = urllib.parse.urlsplit(self.headers.get("Origin") or "")
+            try:
+                origin_port = origin.port
+            except ValueError:
+                origin_port = None
+            if origin.scheme != "http" or (origin.hostname or "") not in LOOPBACK or origin_port != self.server.server_port:
+                self.json(403, {"error": "Forbidden: a write must come from this dashboard's own page"})
+                return
+            if not hmac.compare_digest((self.headers.get("X-Switchboard-Token") or "").encode(), secret.encode()):
+                self.json(403, {"error": "Forbidden: the token is missing or old; open the address the dashboard printed"})
+                return
+            if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
+                self.json(415, {"error": "JSON only"})
+                return
+            try:
+                length = int(self.headers.get("Content-Length") or "")
+            except ValueError:
+                self.json(411, {"error": "Content-Length needed"})
+                return
+            if not 0 < length <= MAX_BODY:
+                self.json(413, {"error": "Body too large"})
+                return
+            try:
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                edits = body.get("edits") if isinstance(body, dict) else None
+            except (UnicodeDecodeError, ValueError):
+                self.json(400, {"error": "Not JSON"})
+                return
+            try:
+                if path == "/api/presets/preview":
+                    self.json(200, presets.preview(edits))
+                elif path == "/api/presets/save":
+                    version = body.get("version")
+                    result = presets.save(edits, version=version if isinstance(version, str) else None)
+                    self.json(200, dict(result, state=presets.state()))
+                else:
+                    self.json(404, {"error": "Not found"})
+            except preset_edit.Conflict as e:
+                self.json(409, {"error": str(e)})
+            except preset_edit.EditError as e:
+                self.json(400, {"error": str(e)})
+            except (OSError, ValueError) as e:
+                self.json(500, {"error": f"Nothing written: {e}"})
+
+        def json(self, status, value):
+            body = json.dumps(finite(value), ensure_ascii=True, allow_nan=False).encode("utf-8")
+            self.respond(status, "application/json; charset=utf-8", body)
 
         def respond(self, status, content_type, body):
             self.send_response(status)
@@ -444,7 +824,8 @@ def make_server(port=8765, store=None):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             self.end_headers()
             try:
                 self.wfile.write(body)
@@ -455,7 +836,9 @@ def make_server(port=8765, store=None):
             # Journal/provider data should not leak into terminal request logs.
             pass
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.token = secret
+    return server
 
 
 def main(argv=None):
@@ -469,9 +852,10 @@ def main(argv=None):
     if args.once:
         Path(args.once).write_text(page_html(gather_state()), encoding="utf-8")
         return 0
-    with make_server(args.port) as server:
-        address = f"http://127.0.0.1:{server.server_port}/"
-        print(f"Local limits: {address} (Ctrl+C to stop)", flush=True)
+    with make_server(args.port, editor=preset_edit.Editor(context=route.resolve_context())) as server:
+        # The token is in the fragment, which the browser keeps to itself: it never reaches a request log or a Referer.
+        address = f"http://127.0.0.1:{server.server_port}/#token={server.token}"
+        print(f"Local limits: {address} (Ctrl+C to stop; presets at /presets)", flush=True)
         if not args.no_browser:
             webbrowser.open(address)
         try:

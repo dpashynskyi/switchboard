@@ -41,3 +41,12 @@ cap (exit 5) does not move it. `ask.py --status` shows the pools, what burns fir
 models and their roles.
 
 Presets: `manual` preserves today's order and each role's live/shadow scoring. `thrifty`, `strong`, and `fast` use their own time/cost weights, in shadow only for now: the actual pick stays manual. Claude stays last under every preset. `ask.py --preset` compares all roles without calling models; `--preset fast` selects the active column.
+
+Tuning them: the dashboard's presets page (`dashboard.py`, then Presets) and `ask.py --preset edit` make the same edits.
+For the manual preset, a role's rows in another order, a row switched off (kept under the role's `off`, never called), or
+a model of this machine added; for a weighted preset, its quality, time and cost weights. Beside each role stands whom
+the router would pick now under the settings on screen, before anything is saved. A save writes your
+`~/.config/ask/roles.json` (through a link, to the file it names) in one rename, and keeps the file before as
+`~/.config/ask/roles.json.bak`; a role or preset edited back to the shipped one leaves your file. The dashboard listens
+on 127.0.0.1 only; a write needs the token made at its start (in the address it prints and opens), an `Origin` of the
+dashboard itself and a loopback `Host`, so another page in the browser cannot change the router's config.
