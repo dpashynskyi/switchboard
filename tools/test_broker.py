@@ -484,6 +484,54 @@ class BrokerTests(unittest.TestCase):
         self.assertIn("All done", result["response"])
         self.assertTrue(driver.turn_ended.is_set())
 
+    def test_checklist_entries(self):
+        text = "Plan:\n- [x] Write a.txt\n* [ ] Write b.txt\n  1. [/] Write c.txt\n- [-] Push\n- [] not an item\n-[ ] nor this\n"
+        self.assertEqual(broker.checklist_entries(text), [
+            {"text": "Write a.txt", "status": "completed"}, {"text": "Write b.txt", "status": "pending"},
+            {"text": "Write c.txt", "status": "in_progress"}, {"text": "Push", "status": "cancelled"}])
+        self.assertEqual(broker.checklist_entries(None), [])
+
+    def test_codex_checklist_in_a_message_starts_another_turn(self):
+        # Measured with Codex 0.167 (7 Nov 2026): the model wrote its plan as a checklist in a commentary message and
+        # called no plan tool, so no turn/plan/updated came.
+        def note(text, item_id):
+            return {"notification": "item/completed", "params": {"item": {
+                "id": item_id, "type": "agentMessage", "phase": "commentary", "text": text}}}
+        turns = [{"steps": [note("- [x] Write a.txt\n- [ ] Write b.txt", "m1")], "answer": "first item done"},
+                 {"steps": [note("- [x] Write a.txt\n- [x] Write b.txt", "m2")], "answer": "all done"}]
+        _, result = self.run_driver("codex", {"turns": turns})
+        inputs = self.prompts("turn/start")
+        self.assertEqual(len(inputs), 2)
+        self.assertIn("- Write b.txt", inputs[1])
+        self.assertIn("[x] for done", inputs[1])
+        self.assertEqual((result["open_todos"], result["todo_turns"]), ([], 1))
+        # A plan tool's plan wins over a checklist in the text.
+        self.events.clear()
+        turns = [{"steps": [self.codex_plan(("README", "completed")), note("- [ ] something said in passing", "m3")]}]
+        _, result = self.run_driver("codex", {"turns": turns})
+        self.assertEqual((len(self.prompts("turn/start")), result["open_todos"]), (1, []))
+
+    def test_acp_checklist_in_agy_brain_sends_the_agent_back(self):
+        # Measured with agy 1.5.3 (7 Nov 2026): no ACP plan; the plan is a markdown artifact in the brain folder.
+        with mock.patch.object(broker, "AGY_BRAIN", os.path.join(self.cwd, "brain")):
+            folder = os.path.join(self.cwd, "brain", "fake-session")
+            stale = os.path.join(folder, "old.md")
+            os.makedirs(folder, exist_ok=True)
+            with open(stale, "w", encoding="utf-8") as handle:
+                handle.write("- [ ] from an earlier run\n")
+            os.utime(stale, (1, 1))
+            turns = [{"steps": [{"append": {"path": os.path.join(folder, "plan.md"), "text": "- [x] a\n- [ ] b\n"}}],
+                      "answer": "first item done"},
+                     {"steps": [{"sleep": .05},
+                                {"append": {"path": os.path.join(folder, "task.md"), "text": "- [x] a\n- [x] b\n"}}],
+                      "answer": "all done"}]
+            _, result = self.run_driver("agy", {"turns": turns})
+        prompts = self.prompts("session/prompt")
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("- b", prompts[1])
+        self.assertNotIn("earlier run", prompts[1])
+        self.assertEqual((result["open_todos"], result["todo_turns"]), ([], 1))
+
     def test_codex_no_carry_on_after_quota_or_failure(self):
         open_plan = self.codex_plan(("README", "pending"))
         quota = {"notification": "account/rateLimits/updated", "params": {"rateLimits": {
