@@ -63,7 +63,7 @@ class StatuslineUsageTests(unittest.TestCase):
                       "2026-11-05T17:00:00Z", "2026-11-05T19:00:00+02:00"):
             with self.subTest(reset=reset):
                 output = self.run_main(self.payload(reset))
-                self.assertEqual(output, "Opus 5.5 · 7d 89% ({}) · 5h 40%\n".format(
+                self.assertEqual(output, "Opus 5.5 · тиждень: лишилось 11%, скидання {} · 5 год: лишилось 60%\n".format(
                     RESET.astimezone().strftime("%H:%M")))
                 data = self.saved()
                 self.assertEqual(data, {
@@ -75,10 +75,12 @@ class StatuslineUsageTests(unittest.TestCase):
     def test_reset_beyond_24_hours_includes_local_weekday(self):
         reset = NOW + timedelta(hours=25)
         output = self.run_main(self.payload(reset.timestamp()))
-        self.assertIn("({})".format(reset.astimezone().strftime("%a %H:%M")), output)
+        local = reset.astimezone()
+        day = statusline_usage.LINE_WORDS["uk"]["days"][local.weekday()]
+        self.assertIn("скидання {} {} ·".format(day, local.strftime("%H:%M")), output)
         at_boundary = NOW + timedelta(hours=24)
         output = self.run_main(self.payload(at_boundary.timestamp()))
-        self.assertIn("({})".format(at_boundary.astimezone().strftime("%H:%M")), output)
+        self.assertIn("скидання {} ·".format(at_boundary.astimezone().strftime("%H:%M")), output)
 
     def test_missing_rate_limits_prints_model_without_writing(self):
         self.assertEqual(self.run_main({"model": {"display_name": "Opus 5.5"}}), "Opus 5.5\n")
@@ -93,20 +95,20 @@ class StatuslineUsageTests(unittest.TestCase):
 
     def test_only_five_hour_usage_is_displayed_without_writing(self):
         self.assertEqual(self.run_main({"rate_limits": {"five_hour": {"used_percentage": 0}}}),
-                         "5h 0%\n")
+                         "5 год: лишилось 100%\n")
         self.assertFalse(os.path.exists(self.path))
 
     def test_missing_or_invalid_reset_still_saves_weekly_percentage(self):
         for reset in (None, "not a date", True, float("inf"), 10**100):
             with self.subTest(reset=reset):
                 data = {"rate_limits": {"seven_day": {"used_percentage": 0, "resets_at": reset}}}
-                self.assertEqual(self.run_main(data), "7d 0%\n")
+                self.assertEqual(self.run_main(data), "тиждень: лишилось 100%\n")
                 self.assertIsNone(self.saved()["windows"][0]["resetsAt"])
 
     def test_invalid_percentages_do_not_write(self):
         for percent in (None, "40", True, float("nan"), float("inf"), 10**1000):
             with self.subTest(percent=str(percent)):
-                self.assertEqual(self.run_main(self.payload(percent=percent)), "Opus 5.5 · 5h 40%\n")
+                self.assertEqual(self.run_main(self.payload(percent=percent)), "Opus 5.5 · 5 год: лишилось 60%\n")
                 self.assertFalse(os.path.exists(self.path))
 
     def test_future_fable_kept_and_expired_or_unknown_windows_dropped(self):
@@ -123,6 +125,15 @@ class StatuslineUsageTests(unittest.TestCase):
         self.assertEqual(self.saved()["windows"][1:], [fable])
         self.run_main(self.payload(), now=NOW + timedelta(days=2))
         self.assertEqual(len(self.saved()["windows"]), 1)
+
+    def test_five_hour_reset_english_words_and_clamped_percent(self):
+        data = {"rate_limits": {"seven_day": {"used_percentage": 104},
+                                "five_hour": {"used_percentage": 25, "resets_at": RESET.timestamp()}}}
+        with mock.patch.dict(os.environ, {"ASK_LANG": "en"}):
+            self.assertEqual(self.run_main(data), "week: 0% left · 5h: 75% left, resets {}\n".format(
+                RESET.astimezone().strftime("%H:%M")))
+        with mock.patch.dict(os.environ, {"ASK_LANG": "xx"}):
+            self.assertIn("week: 0% left", self.run_main(data))
 
     def test_no_rewrite_when_unchanged_and_fresh(self):
         self.run_main(self.payload())
@@ -173,11 +184,11 @@ class StatuslineUsageTests(unittest.TestCase):
         self.run_main(self.payload())
         before = self.saved()
         with mock.patch.object(statusline_usage.os, "replace", side_effect=OSError("unwritable")):
-            self.assertIn("7d 90%", self.run_main(self.payload(percent=90)))
+            self.assertIn("тиждень: лишилось 10%", self.run_main(self.payload(percent=90)))
         self.assertEqual(self.saved(), before)
         self.assertEqual(os.listdir(os.path.dirname(self.path)), ["claude_usage.json"])
         with mock.patch.object(statusline_usage.os, "makedirs", side_effect=OSError("unwritable")):
-            self.assertIn("7d 90%", self.run_main(self.payload(percent=90)))
+            self.assertIn("тиждень: лишилось 10%", self.run_main(self.payload(percent=90)))
 
     def test_old_get_usage_windows_are_not_passed_off_as_fresh(self):
         fable = {"label": "Weekly · Fable", "percentUsed": 95, "resetsAt": "2026-11-12T17:00:00Z"}
