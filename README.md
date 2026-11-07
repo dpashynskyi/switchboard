@@ -8,7 +8,7 @@ a model by **role**: `review`, `second-opinion`, `first-read`, `draft`, `index`,
 | Part | What it does |
 |---|---|
 | `/ask` (`skills/ask`) | `ask.py <model> "question"` or `ask.py --role review --file diff "..."`. Roles are wishes (`{"family": "gemini-4-argon*", "effort": ">=high"}`) matched against the live model lists, so a new model version is taken without an edit. Skips a pool under its floor or burning faster than the week, prefers the quota that expires first, keeps local models off a busy GPU, keeps work tasks off personal accounts (`work`/`personal` context). |
-| writer broker (`tools/writer.py`, `tools/broker.py`) | runs an agy or Codex agent on a brief through `agy acp` / `codex app-server`, under a permission policy: its folders only, no push or commit, no secrets folders, everything else to a human. |
+| writer broker (`tools/writer.py`, `tools/broker.py`) | runs an agy or Codex agent on a brief through `agy acp` / `codex app-server`, under a permission policy: its folders only, no push or commit, no secrets folders, everything else to a human. A turn that ends while the agent's own plan (its todo list) still has open items sends it back to them, up to `--todo-turns` times (default 3, `0` turns it off); a carry-on that closes nothing, a deadline, the token cap or a spent quota stop it sooner, and what is left open goes into the result. |
 | `/limits` and the limits band | the week of every pool in one table, and a band above the prompt (a Claude Code mod), which also stores the Claude week after each turn, in the desktop app too. |
 
 ## Install (a minute)

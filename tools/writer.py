@@ -11,6 +11,8 @@ Exit codes:
 then process-group kill after a grace; legacy CLI counts wall time and kills directly.
 
 The default broker writes live progress, redacted protocol events and human requests beside --log.
+A turn that ends while the agent's plan still has open items starts another (--todo-turns, default 3; a turn that
+closes none of them, a stop or a spent quota ends the run); the items left open are the result's open_todos.
 --legacy-cli keeps the headless behavior documented below.
 
     python tools/writer.py --cwd <folder> --brief <BRIEF.md> [--model <id>] [--agy | --codex]
@@ -169,6 +171,8 @@ def parser(legacy_agy=False):
         ap.add_argument("--legacy-cli", action="store_true", help=argparse.SUPPRESS)
         ap.add_argument("--ask", choices=("human", "never"), default="human", help="broker approvals (default: human)")
         ap.add_argument("--ask-timeout", type=float, default=600, help="seconds to wait for a human (default: 600)")
+        ap.add_argument("--todo-turns", type=int, default=3,
+                        help="turns that send the writer back while its plan has open items (default: 3; 0 disables)")
         ap.add_argument("--answer", nargs="+", metavar="VALUE", help="<base> <option> [text]: answer a pending request")
         ap.epilog = "Broker: agy's usage is read from its transcript after each model step, so --max-tokens stops it there."
         providers = ap.add_mutually_exclusive_group()
@@ -600,7 +604,7 @@ def main(argv=None, legacy_agy=False):
                     opts["effort"] = decision["effort"]  # what the role's wish chose (">=high" -> high)
                 driver = cls(cwd, model, base, progress, event, stop_tree, **opts, add_dirs=a.add_dir, python=python,
                              engine=a.engine, ask=a.ask, ask_timeout=a.ask_timeout, max_tokens=cap, command=cmd,
-                             deadline=a.deadline or None, env=codex_env,
+                             deadline=a.deadline or None, env=codex_env, todo_turns=a.todo_turns,
                              engine_markers=hooks.engine_markers(route.load_machine()),
                              billed=lambda tok: route.billed_tokens(tok, provider, pool=pname, rules=rules)["billed"])
                 reasoning_log = None
@@ -808,6 +812,11 @@ def main(argv=None, legacy_agy=False):
     with open(base + ".progress.txt", "a", encoding="utf-8") as pf:
         progress(f"end, {tok_disp}, {outcome}")
     print(f"\n[{provider} {route.bold(model, color_out)}: conversation {conv_id}, {tok_disp}, {outcome}, log {log}]")
+    if result.get("open_todos"):
+        todos = result["open_todos"]
+        print(route.red(f"[the writer stopped with {len(todos)} open plan item(s) after {result.get('todo_turns', 0)} carry-on "
+                        f"turn(s): {'; '.join(todos[:5])}{'; ...' if len(todos) > 5 else ''}; carry on with --continue "
+                        f"{conv_id} --model {model}]", color_out))
     pool_line = _pool_summary_line(model, cs_after, provider)
     if pool_line:
         print(route.dim(pool_line, color_out))

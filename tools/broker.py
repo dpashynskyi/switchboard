@@ -22,6 +22,8 @@ def agy_transcript_path(session_id):
 
 
 NO_HUMAN = "No human is available: decide yourself and say what you assumed."
+# Plan item states that need no more work (ACP: completed; Codex: completed; the rest as some agents spell them).
+TODO_CLOSED = ("completed", "complete", "done", "cancelled", "canceled", "skipped")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 JWT = re.compile(r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 API_TOKEN = re.compile(r"sk-[A-Za-z0-9_-]{16,}|gh[opsur]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_-]{30,}"
@@ -520,6 +522,15 @@ def file_details(item):
     return paths, summary
 
 
+def plan_entries(entries, text_key):
+    """[{"text", "status"}] from an agent's plan update (ACP entries[].content, Codex plan[].step); bad rows skipped."""
+    out = []
+    for entry in entries if isinstance(entries, list) else []:
+        if isinstance(entry, dict) and isinstance(entry.get(text_key), str) and entry[text_key].strip():
+            out.append({"text": entry[text_key].strip(), "status": str(entry.get("status") or "pending")})
+    return out
+
+
 def acp_usage(raw):
     mapping = {"input_tokens": "inputTokens", "output_tokens": "outputTokens", "thinking_tokens": "thoughtTokens",
                "cache_read_tokens": "cachedReadTokens", "total_tokens": "totalTokens"}
@@ -545,7 +556,8 @@ class Driver:
 
     def __init__(self, cwd, model, base, progress, event, stop_tree, add_dirs=(), python="python", engine=False,
                  ask="human", ask_timeout=600, max_tokens=None, billed=None, command=None, home=None,
-                 deadline=None, deadline_grace=10, env=None, read_only=False, reasoning_sink=None, engine_markers=()):
+                 deadline=None, deadline_grace=10, env=None, read_only=False, reasoning_sink=None, engine_markers=(),
+                 todo_turns=3):
         self.reasoning, self.reasoning_kind = [], None
         self.reasoning_sink = reasoning_sink
         self.env = env
@@ -560,6 +572,9 @@ class Driver:
         self.errors = []
         self.deadline, self.deadline_grace = deadline, deadline_grace
         self.timed_out, self.watchdog = None, None
+        # The agent's own plan (its todo list) as it last sent it, and the turns that sent it back to the open items.
+        self.plan, self.todo_turns, self.todo_carries = [], max(0, int(todo_turns or 0)), 0
+        self.todo_last = None
         self.turn_ended = threading.Event()
         # One stop reason wins: the turn's end, the token cap or the deadline are claimed under this lock.
         self.stop_lock = threading.Lock()
@@ -609,6 +624,32 @@ class Driver:
             if not rpc.closed.is_set() and rpc.process.poll() is None:
                 self.stop_tree(rpc.process)
             return
+
+    def set_plan(self, entries):
+        self.plan = entries
+        done = sum(e["status"].lower() in TODO_CLOSED for e in entries)
+        self.progress(f"plan {done}/{len(entries)} done")
+
+    def open_todos(self):
+        return [e["text"] for e in self.plan if e["status"].lower() not in TODO_CLOSED]
+
+    def todo_prompt(self):
+        """The prompt that sends an agent whose turn ended back to the open items of its plan, or None when it may stop:
+        nothing open, a stop (deadline, cap, quota, failure), --todo-turns spent, or a carry-on turn that closed nothing."""
+        todos = self.open_todos()
+        if (not todos or self.timed_out is not None or self.capped is not None or self.quota or self.failed
+                or self.todo_carries >= self.todo_turns):
+            return None
+        if self.todo_last is not None and todos == self.todo_last:
+            self.progress(f"note: the plan still has {len(todos)} open item(s) and the last carry-on closed none; stopping")
+            return None
+        self.todo_carries += 1
+        self.todo_last = todos
+        self.progress(f"carry on {self.todo_carries}/{self.todo_turns}: the turn ended with {len(todos)} open plan item(s)")
+        listed = "\n".join("- " + t for t in todos[:20]) + ("\n- ..." if len(todos) > 20 else "")
+        return (f"Your turn ended, but your plan still has {len(todos)} open item(s):\n{listed}\n"
+                "Carry on with them now, as the brief says, and keep the plan up to date. If an item cannot be done, "
+                "mark it so in your plan and say why; stop once every item is done or given up.")
 
     def run(self, prompt, conversation=None):
         try:
@@ -757,6 +798,8 @@ class AcpDriver(Driver):
                 tool = copy.deepcopy(tool)
             self.progress(f"{tool.get('name') or tool.get('title') or 'tool'} {tool.get('status', '')} " +
                           json.dumps(redact({k: tool[k] for k in ("rawInput", "rawOutput") if k in tool}), ensure_ascii=False))
+        elif kind == "plan":
+            self.set_plan(plan_entries(update.get("entries"), "content"))
         elif kind != "user_message_chunk":
             self.progress("session/update " + str(kind))
 
@@ -806,10 +849,9 @@ class AcpDriver(Driver):
         if self.cap is not None:
             self._start_usage_watchdog()
         rpc.request("session/set_model", {"sessionId": self.conversation, "modelId": self.model}, 30)
-        # Three carry-on turns in addition to the original turn.
-        for turn in range(4):
-            if self.timed_out is not None:
-                break
+        # Up to three carry-on turns after a refusal, and up to --todo-turns more while the plan has open items.
+        refusals = 0
+        while self.timed_out is None:
             self.last_denial = None
             result = rpc.request("session/prompt", {"sessionId": self.conversation,
                                  "prompt": [{"type": "text", "text": prompt}]})
@@ -818,11 +860,17 @@ class AcpDriver(Driver):
             tokens = {"in": self.usage["input_tokens"], "out": self.usage["output_tokens"],
                       "total": self.usage["total_tokens"], "cached_in": self.usage["cache_read_tokens"]}
             self.check_cap(tokens)
-            if self.timed_out is not None or self.capped is not None or not self.last_denial or result.get("stopReason") != "end_turn" or turn == 3:
+            if self.timed_out is not None or self.capped is not None or result.get("stopReason") != "end_turn":
                 break
-            tool, target, reason = self.last_denial
-            prompt = (f"Your {tool} on {target} was refused: {reason}. Carry on with the rest of the brief without it; "
-                      "if you cannot, say what you need and stop.")
+            if self.last_denial and refusals < 3:
+                refusals += 1
+                tool, target, reason = self.last_denial
+                prompt = (f"Your {tool} on {target} was refused: {reason}. Carry on with the rest of the brief without it; "
+                          "if you cannot, say what you need and stop.")
+                continue
+            prompt = self.todo_prompt()
+            if prompt is None:
+                break
         self.end_turn()
         return self.result()
 
@@ -837,7 +885,8 @@ class AcpDriver(Driver):
                      "cache_read_tokens": live["cached_in"], "total_tokens": live["total"] + live["cached_in"]}
         return {"response": "".join(self.answer).strip(), "conversation_id": self.conversation,
                 "reasoning": "".join(self.reasoning), "reasoning_kind": self.reasoning_kind,
-                "usage": usage, "denied_actions": self.denied, "failed": self.failed, "deadline": self.timed_out}
+                "usage": usage, "denied_actions": self.denied, "failed": self.failed, "deadline": self.timed_out,
+                "open_todos": self.open_todos(), "todo_turns": self.todo_carries}
 
 
 class CodexAppDriver(Driver):
@@ -855,6 +904,8 @@ class CodexAppDriver(Driver):
         self.active = False
         self.usage_ready = threading.Event()
         self.completed = self.turn_ended
+        # A turn that ended with open plan items: the run goes on with next_prompt instead of ending.
+        self.turn_done, self.next_prompt = threading.Event(), None
         self.turn_id = None
 
     def reasoning_piece(self, item_id, text, kind="summary", index=None):
@@ -921,6 +972,8 @@ class CodexAppDriver(Driver):
                 self.rates = rates
                 self.progress("rate limits " + ", ".join(f"{k} {v}% used" for k, v in rates))
             self.quota |= limits.get("rateLimitReachedType") is not None
+        elif method == "turn/plan/updated":
+            self.set_plan(plan_entries(params.get("plan"), "step"))
         elif method == "turn/started":
             self.turn_id = (params.get("turn") or {}).get("id") or self.turn_id
         elif method == "turn/completed":
@@ -929,7 +982,11 @@ class CodexAppDriver(Driver):
                 self.failed |= turn.get("status") == "failed" or bool(turn.get("error"))
             if turn.get("error"):
                 self.errors.append(json.dumps(turn["error"]))
-            self.end_turn()
+            self.next_prompt = self.todo_prompt() if turn.get("status", "completed") == "completed" else None
+            if self.next_prompt is None:
+                self.end_turn()
+            else:
+                self.turn_done.set()
         elif method == "error":
             self.errors.append(json.dumps(params))
             self.progress("ERROR: " + json.dumps(params))
@@ -1030,19 +1087,25 @@ class CodexAppDriver(Driver):
             turn_params["effort"] = self.effort
         if self.reasoning_summary is not None:
             turn_params["summary"] = self.reasoning_summary
-        turn_result = rpc.request("turn/start", turn_params)
-        self.turn_id = (turn_result.get("turn") or {}).get("id") or self.turn_id
-        while not self.completed.wait(.1):
-            if self.capped is not None:
+        while True:
+            self.turn_done.clear()
+            turn_result = rpc.request("turn/start", turn_params)
+            self.turn_id = (turn_result.get("turn") or {}).get("id") or self.turn_id
+            while not (self.completed.is_set() or self.turn_done.wait(.1)):
+                if self.capped is not None:
+                    break
+                if rpc.failure:
+                    raise rpc.failure
+                if rpc.eof.is_set():
+                    raise RuntimeError("agent closed stdio before turn/completed")
+            if self.completed.is_set() or self.capped is not None or self.timed_out is not None:
                 break
-            if rpc.failure:
-                raise rpc.failure
-            if rpc.eof.is_set():
-                raise RuntimeError("agent closed stdio before turn/completed")
+            turn_params = dict(turn_params, input=[{"type": "text", "text": self.next_prompt}])
         self.end_turn()
         return self.result()
 
     def result(self):
         return {"response": "\n\n".join(self.final or self.answer).strip(), "conversation_id": self.conversation,
                 "reasoning": "".join(self.reasoning), "reasoning_kind": self.reasoning_kind,
-                "usage": self.tokens, "failed": self.failed, "denied_actions": self.denied, "deadline": self.timed_out}
+                "usage": self.tokens, "failed": self.failed, "denied_actions": self.denied, "deadline": self.timed_out,
+                "open_todos": self.open_todos(), "todo_turns": self.todo_carries}

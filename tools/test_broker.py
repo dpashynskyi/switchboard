@@ -412,6 +412,88 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(len(self.replies()), 4)
         self.assertEqual(result["usage"]["total_tokens"], 480)
 
+    def prompts(self, method):
+        key = "prompt" if method == "session/prompt" else "input"
+        return [e["msg"]["params"][key][0]["text"] for e in self.events if e["dir"] == "out" and e["msg"].get("method") == method]
+
+    @staticmethod
+    def acp_plan(*entries):
+        return {"notification": "session/update", "params": {"update": {"sessionUpdate": "plan", "entries": [
+            {"content": text, "priority": "medium", "status": status} for text, status in entries]}}}
+
+    @staticmethod
+    def codex_plan(*entries):
+        return {"notification": "turn/plan/updated", "params": {"threadId": "fake-thread", "turnId": "fake-turn", "plan": [
+            {"step": text, "status": status} for text, status in entries]}}
+
+    def test_acp_open_plan_items_send_the_agent_back(self):
+        turns = [{"steps": [self.acp_plan(("Read the brief", "completed"), ("Write notes.md", "pending"))], "answer": ""},
+                 {"steps": [self.acp_plan(("Read the brief", "completed"), ("Write notes.md", "completed"))], "answer": "Written"}]
+        driver, result = self.run_driver("agy", {"turns": turns})
+        prompts = self.prompts("session/prompt")
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("- Write notes.md", prompts[1])
+        self.assertNotIn("Read the brief", prompts[1])
+        self.assertEqual((result["open_todos"], result["todo_turns"], result["response"]), ([], 1, "Written"))
+        self.assertEqual(result["usage"]["total_tokens"], 240)
+        self.assertIn("plan 2/2 done", self.notes)
+
+    def test_acp_todo_turns_limit_and_no_progress(self):
+        def plan(*open_items):
+            return {"steps": [self.acp_plan(*((t, "in_progress") for t in open_items))]}
+        # Each carry-on closes an item, so only --todo-turns stops it.
+        _, result = self.run_driver("agy", {"turns": [plan("a", "b", "c", "d"), plan("b", "c", "d"), plan("c", "d")]},
+                                    todo_turns=2)
+        self.assertEqual(len(self.prompts("session/prompt")), 3)
+        self.assertEqual((result["open_todos"], result["todo_turns"]), (["c", "d"], 2))
+        # A carry-on that closed nothing ends the run, however many turns are left.
+        self.events.clear()
+        _, result = self.run_driver("agy", {"turns": [plan("a", "b")]}, todo_turns=5)
+        self.assertEqual(len(self.prompts("session/prompt")), 2)
+        self.assertEqual((result["open_todos"], result["todo_turns"]), (["a", "b"], 1))
+        self.assertTrue(any("closed none" in n for n in self.notes))
+        # 0 turns it off; a plan with no open items never carries on.
+        for script, kwargs in (({"turns": [plan("a")]}, {"todo_turns": 0}),
+                               ({"turns": [{"steps": [{"notification": "session/update", "params": {"update": {"sessionUpdate": "plan", "entries": [
+                                   {"content": "a", "status": "completed"}, {"content": " ", "status": "pending"}, "bad",
+                                   {"status": "pending"}]}}}]}]}, {})):
+            self.events.clear()
+            _, result = self.run_driver("agy", script, **kwargs)
+            self.assertEqual((len(self.prompts("session/prompt")), result["todo_turns"]), (1, 0))
+
+    def test_acp_refusal_and_open_plan_carry_ons_count_apart(self):
+        turns = [{"steps": [acp(command="git commit"), self.acp_plan(("commit", "pending"), ("notes", "pending"))]},
+                 {"steps": [self.acp_plan(("commit", "cancelled"), ("notes", "pending"))]},
+                 {"steps": [self.acp_plan(("commit", "cancelled"), ("notes", "completed"))]}]
+        _, result = self.run_driver("agy", {"turns": turns}, ask="never")
+        prompts = self.prompts("session/prompt")
+        self.assertEqual(len(prompts), 3)
+        self.assertIn("was refused", prompts[1])
+        self.assertIn("- notes", prompts[2])
+        self.assertNotIn("- commit", prompts[2])
+        self.assertEqual(result["open_todos"], [])
+
+    def test_codex_open_plan_items_start_another_turn(self):
+        turns = [{"steps": [self.codex_plan(("tests", "completed"), ("README", "inProgress"))], "answer": "Half"},
+                 {"steps": [self.codex_plan(("tests", "completed"), ("README", "completed"))], "answer": "All done"}]
+        driver, result = self.run_driver("codex", {"turns": turns})
+        inputs = self.prompts("turn/start")
+        self.assertEqual(len(inputs), 2)
+        self.assertIn("- README", inputs[1])
+        self.assertEqual((result["open_todos"], result["todo_turns"]), ([], 1))
+        self.assertIn("All done", result["response"])
+        self.assertTrue(driver.turn_ended.is_set())
+
+    def test_codex_no_carry_on_after_quota_or_failure(self):
+        open_plan = self.codex_plan(("README", "pending"))
+        quota = {"notification": "account/rateLimits/updated", "params": {"rateLimits": {
+            "primary": {"usedPercent": 100}, "rateLimitReachedType": "primary"}}}
+        for turn in ({"steps": [open_plan, quota]}, {"steps": [open_plan], "status": "failed", "error": {"message": "x"}}):
+            self.events.clear()
+            _, result = self.run_driver("codex", {"turns": [turn, {"answer": "never asked"}]})
+            self.assertEqual(len(self.prompts("turn/start")), 1)
+            self.assertEqual((result["open_todos"], result["todo_turns"]), (["README"], 0))
+
     def test_acp_resume_and_cap_after_turn(self):
         driver, result = self.run_driver("agy", conversation="old-session", max_tokens=100)
         self.assertEqual(result["conversation_id"], "old-session")
@@ -751,6 +833,27 @@ class BrokerTests(unittest.TestCase):
                 with open(route.JOURNAL_PATH) as handle:
                     rows = [json.loads(line) for line in handle]
                 self.assertEqual(rows[-1]["status"], {5: "capped", 6: "quota", 0: "ok"}[expected])
+
+    def test_writer_todo_turns_flag_and_open_items_said(self):
+        import route
+        script = {"turns": [{"steps": [self.codex_plan(("README", "pending"))]}]}
+        for flag, turns in (([], 1), (["--todo-turns", "0"], 0)):
+            with self.subTest(flag=flag), self.writer_patches(), \
+                 mock.patch.object(route, "check_name", return_value={"ok": True, "provider": "codex", "model": "model"}), \
+                 mock.patch.object(route, "codex_path", return_value="fake-codex"):
+                def fake_start(driver):
+                    driver.command = [sys.executable, "-B", str(HERE / "fake_agents.py"), "codex", "--script", json.dumps(script)]
+                    broker.Driver.start(driver)
+                sys.stdout.seek(0)
+                sys.stdout.truncate()
+                with mock.patch.object(broker.CodexAppDriver, "start", fake_start):
+                    code = writer.main(["--cwd", self.cwd, "--model", "model", "--codex", "--brief", "brief.md",
+                                        "--log", self.base + ".json"] + flag)
+                self.assertEqual(code, 0)
+                with open(self.base + ".json") as handle:
+                    result = json.load(handle)
+                self.assertEqual((result["open_todos"], result["todo_turns"]), (["README"], turns))
+                self.assertIn(f"open plan item(s) after {turns} carry-on turn(s): README", sys.stdout.getvalue())
 
     def test_writer_resume_failure_falls_back_once_to_legacy(self):
         import route
