@@ -1,27 +1,27 @@
 # Command line
 
-Every script's `--help` under Python 3.9; `python3 tools/cli_docs.py` rewrites this page.
+Every script's `--help` under Python 3.14; `python3 tools/cli_docs.py` rewrites this page.
 
 ## ask
 
 ```text
 usage: ask.py [-h] [--role ROLE] [--tokens TOKENS] [--force] [--continue] [--thread THREAD]
-              [--effort {low,medium,high,xhigh,max,ultra}]
-              [--agy ID | --ollama ID | --server NAME | --codex ID] [--file FILE] [--think]
-              [--reasoning {file,live,show}] [--handoff [HANDOFF] | --handoff-back ID MODE |
-              --reasoning-read [REASONING_READ] | --reasoning-open [REASONING_OPEN]] [--deadline DEADLINE]
-              [--ask {never,human}] [--ask-timeout ASK_TIMEOUT] [--max-tokens MAX_TOKENS]
-              [--answer VALUE [VALUE ...]] [--wait] [--max-wait MAX_WAIT] [--keep KEEP] [--unload]
-              [--preset [PRESET]] [--status] [--verbose] [--allow-never] [--list] [--refresh]
-              [--context CONTEXT] [--notes] [--context-here WORK|PERSONAL] [--init]
-              [--machine {personal,work,both}] [--work-domain WORK_DOMAIN] [--roles] [--yes] [--needs NEEDS]
+              [--effort {low,medium,high,xhigh,max,ultra}] [--agy ID | --ollama ID | --server NAME |
+              --codex ID] [--file FILE] [--think] [--reasoning {file,live,show}] [--handoff [HANDOFF] |
+              --handoff-back ID MODE | --reasoning-read [REASONING_READ] |
+              --reasoning-open [REASONING_OPEN]] [--deadline DEADLINE] [--ask {never,human}]
+              [--ask-timeout ASK_TIMEOUT] [--max-tokens MAX_TOKENS] [--answer VALUE [VALUE ...]] [--wait]
+              [--max-wait MAX_WAIT] [--keep KEEP] [--unload] [--preset [PRESET]] [--status] [--verbose]
+              [--allow-never] [--list] [--refresh] [--context CONTEXT] [--notes]
+              [--context-here WORK|PERSONAL] [--init] [--machine {personal,work,both}]
+              [--work-domain WORK_DOMAIN] [--roles] [--yes] [--needs NEEDS]
               [name] [text ...]
 
 positional arguments:
   name                  model id (see --list)
   text
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --role ROLE           route by role: review, second-opinion, first-read, draft, index, writer, code-
                         writer, analysis, engine-writer (roles.json)
@@ -86,7 +86,7 @@ usage: writer.py [-h] [--preset PRESET] [--cwd CWD] [--brief BRIEF] [--model MOD
 positional arguments:
   text                  the message (with --continue), or added after the brief
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --preset PRESET       active preset (weighted presets are shadow only)
   --cwd CWD             the folder the writer works in
@@ -129,7 +129,7 @@ usage: limits.py [-h] [--claude-json CLAUDE_JSON]
 
 The week's limits of every pool as one small table.
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --claude-json CLAUDE_JSON
                         get_usage's reply to store first: a file, or - for stdin
@@ -142,7 +142,7 @@ usage: dashboard.py [-h] [--port PORT] [--no-browser] [--once FILE]
 
 On-demand, loopback-only quota dashboard.
 
-optional arguments:
+options:
   -h, --help    show this help message and exit
   --port PORT
   --no-browser
@@ -156,8 +156,26 @@ usage: experience.py [-h] (--check | --role ROLE)
 
 Small, owner-bounded adjustments from public priors and local outcomes.
 
-optional arguments:
+options:
   -h, --help   show this help message and exit
   --check
   --role ROLE
+```
+
+## comment_check
+
+```text
+usage: comment_check.py [-h] [--cwd CWD] [--json] [--limit LIMIT] FROM [TO]
+
+List comments added between git trees, with history signs first.
+
+positional arguments:
+  FROM           starting commit or tree
+  TO             ending commit or tree (default: working tree snapshot)
+
+options:
+  -h, --help     show this help message and exit
+  --cwd CWD      repository folder
+  --json         print entries as JSON
+  --limit LIMIT  maximum entries in the report
 ```

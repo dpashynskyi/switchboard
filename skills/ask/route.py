@@ -3949,7 +3949,7 @@ def _record_conversation_usage(conv_id, raw_tokens, carried_on=False, conversati
 
 def journal(script, role, name, provider, model, tokens=None, seconds=0.0, status="ok", log=None,
             pool=None, before=None, after=None, conversation=None, conversation_tokens=None, journal_path=None,
-            context=None, account=None, crossed=None, why=None, rules=None, score_pick=None, score_notes=None, score_table=None, preset="manual", preset_picks=None):
+            context=None, account=None, crossed=None, why=None, rules=None, score_pick=None, score_notes=None, score_table=None, preset="manual", preset_picks=None, comments=None):
     """Write one JSON line to ~/.cache/ask/usage.jsonl with model, tokens, and CLI pool before/after
     and carried-on conversation_tokens/conversation.
     """
@@ -3976,6 +3976,8 @@ def journal(script, role, name, provider, model, tokens=None, seconds=0.0, statu
         "log": log,
     }
     entry["preset"] = preset
+    if comments is not None:
+        entry["comments"] = comments
     if preset_picks is not None:
         entry["preset_picks"] = preset_picks
     if score_pick is not None:

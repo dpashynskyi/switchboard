@@ -47,6 +47,7 @@ if HERE not in sys.path:
 
 import hooks
 import route
+import comment_check
 
 HOME = os.path.expanduser("~")
 # Where the router's agy adapter finds it (models.json, then the per-OS installs), so writers run off Windows too.
@@ -375,6 +376,27 @@ def _say_score(decision, color):
         print(route.dim(f"[score would pick: {decision['score_pick']}]", color), file=sys.stderr)
 
 
+def _comment_result(cwd, before, base, error=None):
+    try:
+        if error is not None:
+            raise error
+        if before is None:
+            why = (f'no git repository at {cwd}' if comment_check.repo_top(cwd) is None
+                   else 'the working tree snapshot failed before the run')
+            return {}, [f'[comments added: not checked ({why})]']
+        after = comment_check.snapshot(cwd)
+        if after is None:
+            raise RuntimeError('working tree snapshot failed')
+        entries = comment_check.added_comments(cwd, before, after)
+        comment_check.write_list(entries, base + '.comments.txt')
+        lines = comment_check.report(entries)
+        if entries:
+            lines.append(f'  list in {base}.comments.txt')
+        return {'comments': {'added': len(entries), 'history': sum(bool(e['signs']) for e in entries)}}, lines
+    except Exception as error:
+        return {}, [f'[comments added: not checked ({error})]']
+
+
 def main(argv=None, legacy_agy=False):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -557,6 +579,11 @@ def main(argv=None, legacy_agy=False):
         codex_meter.read(a.conversation)  # a resumed thread's rollout already holds its earlier turns
         codex_base = codex_meter.total
     started = time.time()
+    before, comment_error = None, None
+    try:
+        before = comment_check.snapshot(cwd)
+    except Exception as error:
+        comment_error = error
     fallback = False
     driver = None
     returncode = 4
@@ -796,9 +823,10 @@ def main(argv=None, legacy_agy=False):
     answered = bool(str(result.get("response") or "").strip())
     quota = not stopped and not expired and (codex.quota or (not answered and route.is_quota_error(returncode or 1, "\n".join(other))))
     status = "capped" if stopped else "deadline" if expired else "quota" if quota else ("error" if returncode or codex.failed else "ok")
+    comment_kw, comment_lines = _comment_result(cwd, before, base, comment_error)
     route.journal(script, role, model, provider, model, tokens=tokens, seconds=elapsed, status=status,
                   log=raw_log_path, pool=pname, before=before_fracs, after=after_fracs,
-                  conversation=conv_id, conversation_tokens=conv_tokens, rules=rules, **pol_kw)
+                  conversation=conv_id, conversation_tokens=conv_tokens, rules=rules, **pol_kw, **comment_kw)
     print(result.get("response", result.get("raw", "")))
     unit = route.billed_tokens(tokens, provider, pool=pname, rules=rules)
     tok_disp = f"{unit['billed']} billed tokens (fresh {unit['fresh']}, cached {unit['cached']})"
@@ -808,6 +836,7 @@ def main(argv=None, legacy_agy=False):
     with open(base + ".progress.txt", "a", encoding="utf-8") as pf:
         progress(f"end, {tok_disp}, {outcome}")
     print(f"\n[{provider} {route.bold(model, color_out)}: conversation {conv_id}, {tok_disp}, {outcome}, log {log}]")
+    print('\n'.join(comment_lines))
     pool_line = _pool_summary_line(model, cs_after, provider)
     if pool_line:
         print(route.dim(pool_line, color_out))
