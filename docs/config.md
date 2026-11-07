@@ -44,18 +44,19 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `models`, `names` | older spellings of `prefer`, read the same way |
 | `needs` | what the work needs: `python`, `engine`, `big-files`; a model that `traits` says cannot is passed over |
 | `local_only` | never the cloud: waits for the GPU; a machine with no local provider ends at once (exit 8) |
+| `off` | rows switched off: kept for the presets editor (`ask.py --preset edit`, the dashboard's presets page) to switch back on, never called |
 | `pinned` | experience never moves this role's order |
 | `no_engine` | `writer.py --engine` is refused for the role |
 | `exit_code` | the exit code when no model is left (6 for writers: take a Claude subagent) |
 | `fallback`, `if_none` | the message when no model is left |
-| `score` | `{"mode": "live" \| "shadow", "metrics": [...], "time": 0.5, "cost": 0.3, "time_budget_s": 900, "aa_time_scale": 0.6}`: `live` orders by quality from `benchmarks.json` and verdicts, less a time and a cost penalty; `shadow` only says what it would pick. `time_budget_s` is also the role's default `--deadline` |
+| `score` | `{"mode": "live" \| "shadow", "metrics": [...], "time": 0.5, "cost": 0.3, "time_budget_s": 900, "aa_time_scale": 0.6}`: `live` orders by quality from `benchmarks.json` and verdicts (times `quality`, default 1), less a time and a cost penalty; `shadow` only says what it would pick. `time_budget_s` is also the role's default `--deadline` |
 
 **Top level**:
 
 | Key | What it does |
 |---|---|
 | `models` | `{id: {"provider": ...}}`: a provider for an id no live list names |
-| `presets` | named weight dictionaries: `manual: {}`, `thrifty: {"time": 0.2, "cost": 1.5}`, `strong: {"time": 0.05, "cost": 0.05}`, `fast: {"time": 1.5, "cost": 0.2}`. Top-level overlay merges by preset name; missing weights inherit the role. Weighted presets only report shadow picks |
+| `presets` | named weight dictionaries: `manual: {}`, `thrifty: {"time": 0.2, "cost": 1.5}`, `strong: {"time": 0.05, "cost": 0.05}`, `fast: {"time": 1.5, "cost": 0.2}`; a preset may also carry `quality` (default 1). Top-level overlay merges by preset name; missing weights inherit the role. Weighted presets only report shadow picks. `ask.py --preset edit` and the dashboard's presets page change them in your file |
 | `subscription_models` | the Claude subscription's model ids (its subagents) |
 | `traits` | `{"cannot": {"local": {"*": ["python", "engine", "big-files"]}, "codex": {"win32": ["python"]}}}`: what a provider (or `local`, every local one) or a model cannot do, by platform (`sys.platform`, `*` any) |
 | `never` | ids or globs never called (`--allow-never` overrides), `never_reason` says why |

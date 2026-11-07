@@ -154,7 +154,7 @@ def size_factor(role, prompt_tokens, rows, rules=None):
 
 def rank(role, evaluated, rules, rows, bench, cs, prompt_tokens=None, weights=None):
     cfg = dict(config(role, rules))
-    cfg.update({k: v for k, v in (weights or {}).items() if k in ("time", "cost")})
+    cfg.update({k: v for k, v in (weights or {}).items() if k in ("quality", "time", "cost")})
     budget = cfg['time_budget_s']
     spec = rules['roles'][role]
     raw = spec if isinstance(spec, list) else spec.get('models', spec.get('names', []))
@@ -186,7 +186,7 @@ def rank(role, evaluated, rules, rows, bench, cs, prompt_tokens=None, weights=No
     filtered, survivors = [], []
     for e in candidates:
         s = e['score']
-        s['S'] = s['Q'] - cfg.get('time', 0) * (s['seconds'] or 0) / budget - cfg.get('cost', 0) * (s['C'] / maximum if maximum else 0) + s['bonus']
+        s['S'] = cfg.get('quality', 1) * s['Q'] - cfg.get('time', 0) * (s['seconds'] or 0) / budget - cfg.get('cost', 0) * (s['C'] / maximum if maximum else 0) + s['bonus']
         if s['seconds'] is not None and s['seconds'] > budget:
             e.update(ok=False, reason=f"{e['model']}: would time out (~{s['seconds']/60:.0f} min > {budget/60:g} min budget)")
             filtered.append(e)

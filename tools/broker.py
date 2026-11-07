@@ -21,9 +21,35 @@ def agy_transcript_path(session_id):
     return os.path.join(AGY_BRAIN, session_id, ".system_generated", "logs", "transcript.jsonl")
 
 
+def agy_brain_checklist(session_id, since):
+    """The plan agy keeps as a markdown artifact in its brain folder (agy 1.5.3 sends no ACP plan): the checklist of the
+    newest top-level .md file written since `since` (wall clock), or [] when there is none."""
+    folder = os.path.join(AGY_BRAIN, session_id or "")
+    try:
+        names = [n for n in os.listdir(folder) if n.lower().endswith(".md")]
+    except OSError:
+        return []
+    found = []
+    for name in names:
+        path = os.path.join(folder, name)
+        try:
+            mtime = os.path.getmtime(path)
+            if mtime >= since:
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    entries = checklist_entries(handle.read())
+                if entries:
+                    found.append((mtime, entries))
+        except OSError:
+            continue
+    return max(found, key=lambda f: f[0])[1] if found else []
+
+
 NO_HUMAN = "No human is available: decide yourself and say what you assumed."
 # Plan item states that need no more work (ACP: completed; Codex: completed; the rest as some agents spell them).
 TODO_CLOSED = ("completed", "complete", "done", "cancelled", "canceled", "skipped")
+# A markdown checklist line, the plan agents write as text when they use no plan tool: "- [ ] a", "- [x] b", "1. [/] c".
+CHECKLIST_LINE = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[([ xX/~-])\][ \t]+(\S.*?)[ \t]*$", re.M)
+CHECKLIST_MARK = {" ": "pending", "/": "in_progress", "x": "completed", "X": "completed", "-": "cancelled", "~": "cancelled"}
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 JWT = re.compile(r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 API_TOKEN = re.compile(r"sk-[A-Za-z0-9_-]{16,}|gh[opsur]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_-]{30,}"
@@ -531,6 +557,12 @@ def plan_entries(entries, text_key):
     return out
 
 
+def checklist_entries(text):
+    """[{"text", "status"}] from a markdown checklist ([ ] open, [/] in progress, [x] done, [-] or [~] given up)."""
+    return [{"text": m.group(2), "status": CHECKLIST_MARK[m.group(1)]}
+            for m in CHECKLIST_LINE.finditer(text if isinstance(text, str) else "")]
+
+
 def acp_usage(raw):
     mapping = {"input_tokens": "inputTokens", "output_tokens": "outputTokens", "thinking_tokens": "thoughtTokens",
                "cache_read_tokens": "cachedReadTokens", "total_tokens": "totalTokens"}
@@ -575,6 +607,9 @@ class Driver:
         # The agent's own plan (its todo list) as it last sent it, and the turns that sent it back to the open items.
         self.plan, self.todo_turns, self.todo_carries = [], max(0, int(todo_turns or 0)), 0
         self.todo_last = None
+        # Where the plan came from: "tool" (ACP plan, Codex turn/plan/updated) wins over "text" (a markdown checklist).
+        self.plan_source = None
+        self.started_wall = time.time()
         self.turn_ended = threading.Event()
         # One stop reason wins: the turn's end, the token cap or the deadline are claimed under this lock.
         self.stop_lock = threading.Lock()
@@ -625,8 +660,10 @@ class Driver:
                 self.stop_tree(rpc.process)
             return
 
-    def set_plan(self, entries):
-        self.plan = entries
+    def set_plan(self, entries, source="tool"):
+        if source == "text" and (self.plan_source == "tool" or not entries or entries == self.plan):
+            return
+        self.plan, self.plan_source = entries, source
         done = sum(e["status"].lower() in TODO_CLOSED for e in entries)
         self.progress(f"plan {done}/{len(entries)} done")
 
@@ -646,9 +683,10 @@ class Driver:
         self.todo_carries += 1
         self.todo_last = todos
         self.progress(f"carry on {self.todo_carries}/{self.todo_turns}: the turn ended with {len(todos)} open plan item(s)")
+        marks = " (in your checklist, [x] for done, [-] for given up)" if self.plan_source == "text" else ""
         listed = "\n".join("- " + t for t in todos[:20]) + ("\n- ..." if len(todos) > 20 else "")
         return (f"Your turn ended, but your plan still has {len(todos)} open item(s):\n{listed}\n"
-                "Carry on with them now, as the brief says, and keep the plan up to date. If an item cannot be done, "
+                f"Carry on with them now, as the brief says, and keep the plan up to date{marks}. If an item cannot be done, "
                 "mark it so in your plan and say why; stop once every item is done or given up.")
 
     def run(self, prompt, conversation=None):
@@ -853,8 +891,12 @@ class AcpDriver(Driver):
         refusals = 0
         while self.timed_out is None:
             self.last_denial = None
+            answer_mark = len(self.answer)
             result = rpc.request("session/prompt", {"sessionId": self.conversation,
                                  "prompt": [{"type": "text", "text": prompt}]})
+            # agy sends no ACP plan: its checklist in this turn's answer, then (newer) the plan artifact in its brain folder.
+            self.set_plan(checklist_entries("".join(self.answer[answer_mark:])), "text")
+            self.set_plan(agy_brain_checklist(self.conversation, self.started_wall - 2), "text")
             for key, value in acp_usage(result.get("usage") or {}).items():
                 self.usage[key] += value
             tokens = {"in": self.usage["input_tokens"], "out": self.usage["output_tokens"],
@@ -961,6 +1003,7 @@ class CodexAppDriver(Driver):
             elif kind == "agentMessage" and method == "item/completed":
                 # Commentary ("I'm reading the brief first") is not the answer when a final one comes.
                 (self.final if item.get("phase") == "final_answer" else self.answer).append(item.get("text") or "")
+                self.set_plan(checklist_entries(item.get("text")), "text")  # a checklist written as text, no plan tool
         elif method == "thread/tokenUsage/updated":
             self.total = (params.get("tokenUsage") or {}).get("total") or {}
             self.update_tokens()

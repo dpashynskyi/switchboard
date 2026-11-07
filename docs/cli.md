@@ -51,7 +51,8 @@ options:
   --max-wait MAX_WAIT   max seconds or duration (e.g. 2h) to wait for GPU (default: 2h)
   --keep KEEP           Ollama keep_alive duration (e.g. 10m) for a series of questions; default 0
   --unload              unload whatever Ollama holds in video memory
-  --preset [PRESET]     preset name; without a question, compare all presets (shadow)
+  --preset [PRESET]     preset name; without a question, compare all presets (shadow); --preset edit tunes
+                        them
   --status              show pools, reservations, GPU, Ollama and last 24h journal
   --verbose             stream agy's steps one line each as they happen
   --allow-never         allow calling a model in roles.json's never list
@@ -139,12 +140,40 @@ options:
                         get_usage's reply to store first: a file, or - for stdin
 ```
 
+## preset_edit
+
+```text
+usage: ask.py --preset edit [-h] [--role ROLE] [--quality W] [--time W] [--cost W] [--move FROM TO |
+                            --off N | --on N | --add PROVIDER:MODEL]
+                            [preset]
+
+Tune the presets in your ~/.config/ask/roles.json: the manual preset's order of each role's rows (a row switched off,
+a model of this machine added) and the weighted presets' weights (quality, time, cost).
+
+With no change it shows every preset and every role's rows, numbered. ask.py --preset edit runs this, and the
+dashboard's presets page makes the same edits through the same code.
+
+positional arguments:
+  preset                the preset to edit: manual (with --role) or a weighted one
+
+options:
+  -h, --help            show this help message and exit
+  --role ROLE           manual: the role whose rows change
+  --quality W           a weighted preset's quality weight (0-5)
+  --time W              a weighted preset's time weight (0-5)
+  --cost W              a weighted preset's cost weight (0-5)
+  --move FROM TO        manual: move row FROM to place TO
+  --off N               manual: switch row N off (kept, not called)
+  --on N                manual: switch row N back on, at the end
+  --add PROVIDER:MODEL  manual: add a model of this machine at the end
+```
+
 ## dashboard
 
 ```text
 usage: dashboard.py [-h] [--port PORT] [--no-browser] [--once FILE]
 
-On-demand, loopback-only quota dashboard.
+On-demand, loopback-only quota dashboard, and a page that tunes the router's presets (/presets).
 
 options:
   -h, --help    show this help message and exit

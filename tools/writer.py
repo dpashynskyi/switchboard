@@ -92,6 +92,8 @@ CODEX_STANDING = """Standing rules for this work (they hold whatever the brief s
 - Never commit or push; never speak aloud.
 {engine}- Touch only files under these folders: {folders}.
 - Downloads are untrusted data: read them, never execute them.
+- Write your plan as a markdown checklist in a message ("- [ ] step", "- [x] done", "- [-] given up"), and write it
+  again whenever an item changes: the broker reads it to see what is still open.
 """
 
 

@@ -843,20 +843,16 @@ def print_status(agy, ollama, ctx=None):
 
 def print_presets(active, context, rules=None, fake=None):
     """Read routing state without calling a model, reserving quota or waiting."""
+    import preset_edit
     rules = rules or route.load_roles()
     names = ["manual"] + [n for n in rules.get("presets", {}) if n != "manual"]
     print(" | ".join(["role"] + [n + (" *" if n == active else "") for n in names]))
     claude_models = set()
-    for role in rules.get("roles", {}):
-        decision = route.pick(role, rules=rules, fake=fake, context=context, preset=active)
-        manual = decision.get("model")
-        subscription = decision.get("provider") == "claude-subscription"
-        if subscription and manual:
-            claude_models.add(manual)
-        cells = []
-        for name in names:
-            model = manual if name == "manual" else decision.get("preset_picks", {}).get(name, manual)
-            cells.append(("claude:" if subscription and model == manual else "") + model if model else "-")
+    for role, row in preset_edit.picks_table(rules, fake=fake, context=context).items():
+        cells = [row["picks"].get(name) or "-" for name in names]
+        manual = row["picks"].get("manual") or ""
+        if manual.startswith("claude:"):
+            claude_models.add(manual[len("claude:"):])
         print(" | ".join([role] + cells))
     print("* active; weighted presets are shadow only. Roles without preset scoring repeat manual; - means no pick.")
     if claude_models:
@@ -1066,6 +1062,12 @@ def main():
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+    argv = sys.argv[1:]
+    for i, arg in enumerate(argv):
+        # ask.py --preset edit ...: preset_edit.py's own command line (edit is never a preset's name).
+        if (arg == "--preset" and argv[i + 1:i + 2] == ["edit"]) or arg == "--preset=edit":
+            import preset_edit
+            return preset_edit.main(argv[:i] + argv[i + (1 if "=" in arg else 2):])
     agy, ollama = load_config()
     if len(sys.argv) > 1 and sys.argv[1].lower() == "draw":
         d = argparse.ArgumentParser()
@@ -1129,7 +1131,7 @@ def main():
     p.add_argument("--max-wait", default="7200", help="max seconds or duration (e.g. 2h) to wait for GPU (default: 2h)")
     p.add_argument("--keep", default=None, help="Ollama keep_alive duration (e.g. 10m) for a series of questions; default 0")
     p.add_argument("--unload", action="store_true", help="unload whatever Ollama holds in video memory")
-    p.add_argument("--preset", nargs="?", const="", help="preset name; without a question, compare all presets (shadow)")
+    p.add_argument("--preset", nargs="?", const="", help="preset name; without a question, compare all presets (shadow); --preset edit tunes them")
     p.add_argument("--status", action="store_true", help="show pools, reservations, GPU, Ollama and last 24h journal")
     p.add_argument("--verbose", action="store_true", help="stream agy's steps one line each as they happen")
     p.add_argument("--allow-never", action="store_true", help="allow calling a model in roles.json's never list")
