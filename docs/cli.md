@@ -1,6 +1,6 @@
 # Command line
 
-Every script's `--help` under Python 3.14; `python3 tools/cli_docs.py` rewrites this page.
+Every script's `--help` under Python 3.13; `python3 tools/cli_docs.py` rewrites this page.
 
 ## ask
 
@@ -182,4 +182,26 @@ options:
   --cwd CWD      repository folder
   --json         print entries as JSON
   --limit LIMIT  maximum entries in the report
+```
+
+## room
+
+```text
+usage: room.py [-h] {new,say,round,vote,propose,note,tail,list} ...
+
+A superchat room: several agents in one transcript.
+
+positional arguments:
+  {new,say,round,vote,propose,note,tail,list}
+    new                 open a room
+    say                 the owner's message; members answer at once
+    round               members take turns in order
+    vote                every member votes on a proposal
+    propose             put a plan or a split of roles to the vote
+    note                the moderator writes without asking anyone
+    tail                the transcript's last entries
+    list                the rooms
+
+options:
+  -h, --help            show this help message and exit
 ```

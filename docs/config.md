@@ -80,6 +80,8 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `ASK_CLAUDE_USAGE_PATH` | another file for the Claude subscription's limits, which `/limits` and the status line write and the router reads (default `~/.cache/ask/claude_usage.json`) |
 | `ASK_CONFIG_DIR` | another folder for `machine.json`, the old `models.json` and your `roles.json` (default `~/.config/ask`) |
 | `ASK_CACHE_DIR` | another folder for the journal, logs and caches (default `~/.cache/ask`) |
+| `ASK_ROOMS_DIR` | another folder for superchat rooms (`tools/room.py`; default `rooms` in `ASK_CACHE_DIR`, beside the journal) |
+| `ROOM_ASK_CMD` | the command a room runs for a member's turn instead of `python ask.py` (tests use a fake) |
 | `ASK_ROUTE_FAKE` | a fake machine state (JSON or a file) for tests: nothing outside is asked |
 | `SWITCHBOARD_ROOT` | where the plugin lies, for the band (default `~/switchboard`) |
 | `CODEX_HOME` | Codex's active account folder; another account the policy picks runs with its own |
