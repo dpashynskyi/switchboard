@@ -117,6 +117,7 @@ def main(argv=None):
     run("suite skills/ask", [py, "-B", "-m", "unittest"], os.path.join(root, "skills", "ask"), env, results)
     run("suite tools/test_broker.py", [py, "-B", "tools/test_broker.py"], root, env, results)
     run("suite mods/limits-band/test_band.py", [py, "-B", "mods/limits-band/test_band.py"], root, env, results)
+    run("suite tools/test_room.py", [py, "-B", "tools/test_room.py"], root, env, results)
     run("suite tools/test_pii_sweep.py", [py, "-B", "tools/test_pii_sweep.py"], root, env, results)
     claude = shutil.which("claude")
     if claude:

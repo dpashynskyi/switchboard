@@ -20,7 +20,7 @@ NOT_SETTINGS = {"HOME", "USERPROFILE", "PATH", "TERM", "_error", "event", "statu
 
 def sources():
     files = [p for p in glob.glob(os.path.join(HERE, "*.py")) if not os.path.basename(p).startswith("test_")]
-    files += [os.path.join(ROOT, "tools", n) for n in ("writer.py", "broker.py") if os.path.exists(os.path.join(ROOT, "tools", n))]
+    files += [os.path.join(ROOT, "tools", n) for n in ("writer.py", "broker.py", "room.py") if os.path.exists(os.path.join(ROOT, "tools", n))]
     files += glob.glob(os.path.join(ROOT, "mods", "limits-band", "band.py"))
     files += glob.glob(os.path.join(ROOT, "hooks", "*.tsx")) + glob.glob(os.path.join(ROOT, "mods", "limits-band", "hooks", "*.tsx"))
     return {p: Path(p).read_text(encoding="utf-8") for p in files}
