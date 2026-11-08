@@ -236,3 +236,20 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
 ```
+
+## cloud
+
+```text
+usage: cloud.py [-h] {start,send,list} ...
+
+Hand a brief to a Claude Code cloud session.
+
+positional arguments:
+  {start,send,list}
+    start            start a cloud session on a brief
+    send             send a follow-up to a cloud session
+    list             the cloud sessions started here
+
+options:
+  -h, --help         show this help message and exit
+```
