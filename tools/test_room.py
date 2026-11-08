@@ -21,6 +21,15 @@ FAKE = textwrap.dedent('''
     print("[conversation t-%s: carry on with --thread t-%s]" % (persona, persona), file=sys.stderr)
     if persona == "broken":
         print("quota spent", file=sys.stderr); sys.exit(6)
+    if persona == "shy" and "transcript only" not in prompt:
+        print("policy: denied git show", file=sys.stderr)
+        print("[reasoning: /tmp/r.md]", file=sys.stderr); sys.exit(2)
+    if persona == "flaky":
+        import os
+        mark = os.environ["FLAKY_MARK"]
+        if not os.path.exists(mark):
+            open(mark, "w").close()
+            print("gone", file=sys.stderr); sys.exit(6)
     print("[fake-%s, a pool]" % persona)
     if prompt.count("Vote on proposal"):
         vote = {"yes": "yes", "no": "no", "veto": "veto", "plain": None}.get(persona, "yes")
@@ -48,7 +57,7 @@ class RoomTests(unittest.TestCase):
         folder = Path(self.temporary.name)
         fake = folder / "fake_ask.py"
         fake.write_text(FAKE, encoding="utf-8")
-        patcher = mock.patch.dict(os.environ, {"ASK_ROOMS_DIR": str(folder / "rooms"),
+        patcher = mock.patch.dict(os.environ, {"ASK_ROOMS_DIR": str(folder / "rooms"), "FLAKY_MARK": str(folder / "flaky"),
                                                "ROOM_ASK_CMD": f'"{sys.executable}" -I "{fake}"'})
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -116,6 +125,43 @@ class RoomTests(unittest.TestCase):
         code, out, _ = self.run_room("say", path, "hi")
         self.assertEqual(code, 0)
         self.assertIn("broken did not answer: exit 6: quota spent", out)
+
+    def test_no_text_is_tried_once_more_from_the_transcript(self):
+        path = self.open_room("shy")
+        code, out, _ = self.run_room("say", path, "hi")
+        self.assertEqual(code, 0)
+        self.assertIn("shy: shy here", out)
+        self.assertNotIn("error", self.kinds(path))
+
+    def test_quota_is_not_tried_again_and_the_cause_is_shown(self):
+        calls = []
+        real = room.call_member
+        with mock.patch.object(room, "call_member", side_effect=lambda *a: calls.append(1) or real(*a)):
+            path = self.open_room("broken", "alpha")
+            self.run_room("say", path, "hi")
+        self.assertEqual(len(calls), 2)  # one each, no second try for the spent quota
+
+    def test_cause_skips_ask_notes(self):
+        self.assertEqual(room.cause("policy: denied git show\n[reasoning: /tmp/r.md]\n"), "policy: denied git show")
+        self.assertEqual(room.cause(""), "no output")
+
+    def test_retry_takes_the_failed_turn_again(self):
+        path = self.open_room("flaky")
+        self.run_room("round", path, "--note", "go")
+        self.assertIn("error", self.kinds(path))
+        code, out, _ = self.run_room("retry", path, "flaky")
+        self.assertEqual(code, 0)
+        self.assertIn("flaky here", out)
+        with self.assertRaises(SystemExit):
+            self.run_room("retry", path, "nobody")
+
+    def test_moderator_question_is_not_the_owners(self):
+        path = self.open_room("alpha", extra=("--max-rounds", "1"))
+        self.run_room("round", path)
+        _, out, _ = self.run_room("say", path, "what now?", "--as", "moderator")
+        asked = room.Room(path).entries()[-2]
+        self.assertEqual((asked["kind"], room.render(asked)), ("ask", "[4] moderator asks: what now?"))
+        self.assertEqual(self.run_room("round", path)[0], 3)  # the moderator's question does not end a deadlock
 
     def test_no_member_answered(self):
         path = self.open_room("broken")

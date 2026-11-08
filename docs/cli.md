@@ -216,16 +216,17 @@ options:
 ## room
 
 ```text
-usage: room.py [-h] {new,say,round,vote,propose,note,tail,list} ...
+usage: room.py [-h] {new,say,round,vote,retry,propose,note,tail,list} ...
 
 A superchat room: several agents in one transcript.
 
 positional arguments:
-  {new,say,round,vote,propose,note,tail,list}
+  {new,say,round,vote,retry,propose,note,tail,list}
     new                 open a room
     say                 the owner's message; members answer at once
     round               members take turns in order
     vote                every member votes on a proposal
+    retry               take a member's last failed turn again
     propose             put a plan or a split of roles to the vote
     note                the moderator writes without asking anyone
     tail                the transcript's last entries
