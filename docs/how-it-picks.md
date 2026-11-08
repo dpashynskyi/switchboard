@@ -33,6 +33,8 @@ that may go and should go. Every model passed over is said on stderr as `[passed
 10. **Score.** A role with `score.mode: live` orders the allowed models by quality, less a time and a cost penalty
     (then experience and the expiry rule give way to it). The price of a call falls when, at the pool's rate over
     the last day, its quota would be lost unused at the reset.
+    With 10 or more judged writer conversations in 30 days for a model and role (`scorecard` in roles.json), the
+    quality is their verdict share, (ok + fixed) / judged, the latest verdict of each; `ask.py --scorecard` shows it.
 11. **The Claude subscription** is the last resort: the script never calls it; it prints `use a Claude subagent (<model>)`
     and exits 6, and the session runs that model as its own subagent.
 

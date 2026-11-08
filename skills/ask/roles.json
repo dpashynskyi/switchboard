@@ -360,6 +360,10 @@
   "pace_skip": 2.0,
   "never": [],
   "never_reason": "the model is in roles.json's never list",
+  "scorecard": {
+    "window_days": 30,
+    "min_judged": 10
+  },
   "score_defaults": {
     "burn_floor": 0.1,
     "recent_hours": 24,

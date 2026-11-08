@@ -1133,6 +1133,7 @@ def main():
     p.add_argument("--unload", action="store_true", help="unload whatever Ollama holds in video memory")
     p.add_argument("--preset", nargs="?", const="", help="preset name; without a question, compare all presets (shadow); --preset edit tunes them")
     p.add_argument("--status", action="store_true", help="show pools, reservations, GPU, Ollama and last 24h journal")
+    p.add_argument("--scorecard", action="store_true", help="writer verdict share per provider, model and role (30 days)")
     p.add_argument("--verbose", action="store_true", help="stream agy's steps one line each as they happen")
     p.add_argument("--allow-never", action="store_true", help="allow calling a model in roles.json's never list")
     p.add_argument("--list", action="store_true", help="provider -> account (label) -> model -> efforts, and what this context allows")
@@ -1206,6 +1207,11 @@ def main():
         print(f"Preset: {active['preset']} ({active['source']})" +
               (" (shadow)" if active['preset'] != "manual" else ""))
         return print_status(agy, ollama, ctx)
+    if a.scorecard:
+        import scorecard
+        rules = route.load_roles()
+        print(scorecard.table(scorecard.cards(route._read_journal_rows(fake=route.resolve_fake()), rules), rules))
+        return 0
     if a.unload:
         code, msg = unload_all_ollama(ollama)
         print(msg)
