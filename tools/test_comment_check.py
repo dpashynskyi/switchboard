@@ -54,7 +54,7 @@ class RepositoryTests(unittest.TestCase):
     def write(self, path, text):
         target = self.repo / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding='utf-8', newline='\n')
+        target.write_bytes(text.encode('utf-8'))
 
     def commit(self):
         self.git('add', '-A')
