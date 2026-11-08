@@ -73,6 +73,16 @@ class CardTests(unittest.TestCase):
         self.assertIn("provisional", text)
         self.assertIn("No writer verdicts", scorecard.table({}))
 
+    def test_rows_without_verdicts_are_hidden_unless_all(self):
+        rows = [run("a", 1), verdict("a", "ok", 0.5), run("r", 1, role="review")]
+        found = scorecard.cards(rows, now=NOW)
+        self.assertNotIn("review", scorecard.table(found).split("\n\n")[0])
+        self.assertIn("1 rows with runs but no verdict are hidden", scorecard.table(found))
+        self.assertIn("review", scorecard.table(found, everything=True))
+        only = scorecard.cards([run("r", 1, role="review")], now=NOW)
+        self.assertIn("No writer verdicts", scorecard.table(only))
+        self.assertIn("--scorecard all", scorecard.table(only))
+
 
 class ScoreTests(unittest.TestCase):
     def test_quality_takes_the_share_only_past_the_threshold(self):

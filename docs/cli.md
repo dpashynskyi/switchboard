@@ -11,10 +11,10 @@ usage: ask.py [-h] [--role ROLE] [--tokens TOKENS] [--force] [--continue] [--thr
               --handoff-back ID MODE | --reasoning-read [REASONING_READ] |
               --reasoning-open [REASONING_OPEN]] [--deadline DEADLINE] [--ask {never,human}]
               [--ask-timeout ASK_TIMEOUT] [--max-tokens MAX_TOKENS] [--answer VALUE [VALUE ...]] [--wait]
-              [--max-wait MAX_WAIT] [--keep KEEP] [--unload] [--preset [PRESET]] [--status] [--scorecard]
-              [--verbose] [--allow-never] [--list] [--refresh] [--context CONTEXT] [--notes]
-              [--context-here WORK|PERSONAL] [--init] [--machine {personal,work,both}]
-              [--work-domain WORK_DOMAIN] [--roles] [--yes] [--needs NEEDS]
+              [--max-wait MAX_WAIT] [--keep KEEP] [--unload] [--preset [PRESET]] [--status]
+              [--scorecard [{judged,all}]] [--verbose] [--allow-never] [--list] [--refresh]
+              [--context CONTEXT] [--notes] [--context-here WORK|PERSONAL] [--init]
+              [--machine {personal,work,both}] [--work-domain WORK_DOMAIN] [--roles] [--yes] [--needs NEEDS]
               [name] [text ...]
 
 positional arguments:
@@ -54,7 +54,9 @@ options:
   --preset [PRESET]     preset name; without a question, compare all presets (shadow); --preset edit tunes
                         them
   --status              show pools, reservations, GPU, Ollama and last 24h journal
-  --scorecard           writer verdict share per provider, model and role (30 days)
+  --scorecard [{judged,all}]
+                        writer verdict share per provider, model and role (30 days); all: also rows with no
+                        verdict
   --verbose             stream agy's steps one line each as they happen
   --allow-never         allow calling a model in roles.json's never list
   --list                provider -> account (label) -> model -> efforts, and what this context allows
