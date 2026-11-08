@@ -80,10 +80,15 @@ def verdict_quality(role, provider, model, rows, rules=None, now=None):
     return None if c is None or c["provisional"] else c["share"]
 
 
-def table(found, rules=None):
+def table(found, rules=None, everything=False):
+    """The table; rows no verdict ever judged (review, second-opinion, runs without a role) only with everything."""
     config = settings(rules)
+    hidden = 0 if everything else sum(1 for c in found.values() if not c["judged"])
+    if not everything:
+        found = {k: c for k, c in found.items() if c["judged"]}
     if not found:
-        return f"No writer verdicts in the last {config['window_days']} days (writer.py --verdict <id> ok|fixed|rejected)."
+        none = f"No writer verdicts in the last {config['window_days']} days (writer.py --verdict <id> ok|fixed|rejected)."
+        return none + (f" {hidden} rows with runs but no verdict: ask.py --scorecard all." if hidden else "")
     head = ("provider", "model", "role", "share", "clean ok", "ok", "fixed", "rejected", "judged/total", "")
     body = []
     order = sorted(found.items(), key=lambda kv: (-(kv[1]["share"] or -1), str(kv[0])))
@@ -96,4 +101,6 @@ def table(found, rules=None):
     line = lambda r: "  ".join(v.ljust(w) for v, w in zip(r, widths)).rstrip()
     foot = (f"Last {config['window_days']} days, the latest verdict of each conversation. share = (ok + fixed) / judged. "
             f"Under {config['min_judged']} judged a row is provisional: routing keeps its usual quality.")
+    if hidden:
+        foot += f"\n{hidden} rows with runs but no verdict are hidden: ask.py --scorecard all."
     return "\n".join([line(head)] + [line(r) for r in body] + ["", foot])
