@@ -8,6 +8,8 @@ turn goes through the router as it is: contexts, floors, reservations, the GPU l
     python3 tools/room.py round <room> [--note "text"]       # members take turns in order, each sees the turns before
     python3 tools/room.py propose <room> plan|roles --file body.md [--by <member>]
     python3 tools/room.py vote <room> <proposal id>          # every member votes; the room's rule decides
+    python3 tools/room.py say <room> "question" --as moderator  # the moderator's own question, not the owner's
+    python3 tools/room.py retry <room> <member>               # take a member's last failed turn again
     python3 tools/room.py note <room> "text"                 # the moderator writes without asking anyone
     python3 tools/room.py tail <room> [-n 20] | list
 
@@ -145,6 +147,8 @@ def render(item):
     kind, by = item.get("kind"), item.get("by", "")
     if kind == "owner":
         return f"[{item['n']}] the owner{' to ' + item['to'] if item.get('to') else ''}: {item.get('text', '')}"
+    if kind == "ask":
+        return f"[{item['n']}] moderator asks{' ' + item['to'] if item.get('to') else ''}: {item.get('text', '')}"
     if kind == "say":
         return f"[{item['n']}] {by}: {item.get('text', '')}"
     if kind == "proposal":
@@ -205,6 +209,17 @@ def clean_answer(stdout):
     return "\n".join(lines).strip(), model
 
 
+# ask.py's own notes on stderr ([reasoning: <file>], [conversation ...]) say where things are, not what went wrong.
+NOTE_LINE = re.compile(r"^\[(?:reasoning|conversation|passed over)\b")
+
+
+def cause(stderr):
+    """The line of ask.py's stderr that says why a turn failed: the last one that is not one of its notes."""
+    lines = [l.strip() for l in ANSI.sub("", stderr or "").splitlines() if l.strip()]
+    told = [l for l in lines if not NOTE_LINE.match(l)]
+    return (told or lines or ["no output"])[-1][:300]
+
+
 def call_member(member, prompt, timeout):
     try:
         done = subprocess.run(ask_command(member, prompt), capture_output=True, text=True, encoding="utf-8",
@@ -214,8 +229,7 @@ def call_member(member, prompt, timeout):
     found = THREAD.findall(done.stderr or "")
     thread = found[-1] if found else None
     if done.returncode != 0 or not (done.stdout or "").strip():
-        last = (done.stderr or "").strip().splitlines()[-1:] or [f"exit {done.returncode}"]
-        return None, thread, f"exit {done.returncode}: {last[0][:300]}"
+        return None, thread, f"exit {done.returncode}: {cause(done.stderr)}"
     answer, model = clean_answer(done.stdout)
     if model:
         member["model"] = model
@@ -231,23 +245,37 @@ def brief(room, member, task):
     head = (f"You are {member['name']}, a member of a room of agents ({names}) moderated by Claude for the owner. "
             f"Topic: {room.config.get('topic') or 'see the transcript'}. The room decides by the {room.config['rule']} "
             "rule. You only read and talk here: do not edit files or run commands that change anything. "
+            "Some members may not run commands at all: if a tool or command is refused, answer from the transcript "
+            "and what you know without it. "
             "Be brief, say where you agree or disagree with the others, and add what is new.")
     lines = [render(e) for e in unseen if e.get("kind") not in ("open",)]
     return f"{head}\n\nThe transcript since your last turn:\n" + ("\n".join(lines) or "(nothing yet)") + f"\n\n{task}"
 
 
+RETRY_NOTE = ("Your last attempt at this turn ended without an answer. Answer now from the transcript only, "
+              "without tools or commands.")
+
+
 def take_turn(room, member, task, timeout):
     answer, thread, error = call_member(member, brief(room, member, task), timeout)
-    return member["name"], answer, thread, error
+    if error and error.startswith("exit 2:"):
+        # Once, from the transcript only: a member that may not run commands ends its turn without text (exit 2) on
+        # a refused one. A spent quota or a policy refusal (other exits) would only fail again.
+        if thread:
+            member["thread"] = thread
+        answer, again, second = call_member(member, brief(room, member, task + "\n\n" + RETRY_NOTE), timeout)
+        thread = again or thread
+        error = f"{error}; once more from the transcript: {second}" if second else None
+    return member["name"], answer, thread, error, task
 
 
-def record_turn(room, name, answer, thread, error):
+def record_turn(room, name, answer, thread, error, task=""):
     member = room.member(name)
     if thread:
         member["thread"] = thread
     member["seen"] = len(room.entries())
     if error:
-        item = room.append({"kind": "error", "by": name, "text": error})
+        item = room.append({"kind": "error", "by": name, "text": error, "task": task})
         room.save()
         return [item]
     reply, structured = parse_reply(answer)
@@ -336,9 +364,11 @@ def cmd_new(a):
 
 def cmd_say(a):
     room = Room.find(a.room)
-    room.append({"kind": "owner", "text": a.text, **({"to": a.to} if a.to else {})})
-    out = parallel_turns(room, members_for(room, a.to), "Answer the owner's last message. " + REPLY_SHAPE,
-                         a.timeout)
+    # The moderator's own question (--as moderator) is not the owner's word and does not end a deadlock.
+    kind = "owner" if a.as_ == "owner" else "ask"
+    room.append({"kind": kind, "text": a.text, **({"to": a.to} if a.to else {})})
+    who = "the owner's" if kind == "owner" else "the moderator's"
+    out = parallel_turns(room, members_for(room, a.to), f"Answer {who} last message. " + REPLY_SHAPE, a.timeout)
     for item in out:
         print(render(item))
     return answered(out)
@@ -381,7 +411,7 @@ def cmd_vote(a):
     votes = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(room.config["members"])) as pool:
         results = list(pool.map(lambda m: take_turn(room, m, task, a.timeout), room.config["members"]))
-    for name, answer, thread, error in results:
+    for name, answer, thread, error, _ in results:
         member = room.member(name)
         if thread:
             member["thread"] = thread
@@ -411,6 +441,19 @@ def cmd_vote(a):
     if outcome == "vetoed":
         print("Vetoed: back to discussion (room.py round), with the veto's reason as the note.", file=sys.stderr)
     return 0
+
+
+def cmd_retry(a):
+    room = Room.find(a.room)
+    member = room.member(a.member)
+    failed = [e for e in room.entries() if e.get("kind") == "error" and e.get("by") == a.member and e.get("task")]
+    if not failed:
+        raise SystemExit(f"{a.member} has no failed turn to take again.")
+    task = failed[-1]["task"]
+    out = record_turn(room, *take_turn(room, member, task, a.timeout))
+    for item in out:
+        print(render(item))
+    return answered(out)
 
 
 def cmd_note(a):
@@ -453,11 +496,17 @@ def parser():
         if name == "say":
             s.add_argument("text")
             s.add_argument("--to", help="one member answers; the others only read")
+            s.add_argument("--as", dest="as_", choices=("owner", "moderator"), default="owner",
+                           help="whose words these are: the owner's (default) or the moderator's own question")
         if name == "round":
             s.add_argument("--note", help="the moderator's word for this round")
         if name == "vote":
             s.add_argument("proposal")
         s.add_argument("--timeout", type=int, default=1800, help="seconds for one member's turn")
+    s = sub.add_parser("retry", help="take a member's last failed turn again")
+    s.add_argument("room")
+    s.add_argument("member")
+    s.add_argument("--timeout", type=int, default=1800, help="seconds for one member's turn")
     s = sub.add_parser("propose", help="put a plan or a split of roles to the vote")
     s.add_argument("room")
     s.add_argument("kind", choices=KINDS)
@@ -476,7 +525,7 @@ def parser():
 def main(argv=None):
     a = parser().parse_args(argv)
     return {"new": cmd_new, "say": cmd_say, "round": cmd_round, "propose": cmd_propose, "vote": cmd_vote,
-            "note": cmd_note, "tail": cmd_tail, "list": cmd_list}[a.command](a)
+            "note": cmd_note, "retry": cmd_retry, "tail": cmd_tail, "list": cmd_list}[a.command](a)
 
 
 if __name__ == "__main__":

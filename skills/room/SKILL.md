@@ -21,7 +21,12 @@ and the Claude subscription is not a member.
 
 ## Level 0: a group chat
 `room.py say <room> "<the user's words, word for word>"` (or `--to <member>`). Show each answer word for word under its
-member's name; your own view, if any, after.
+member's name; your own view, if any, after. A question of your own (not the user's words) goes with `--as moderator`,
+so the transcript does not put it in the user's mouth.
+
+A member that did not answer: a turn that ends without text is tried once more from the transcript only (agy may not
+run commands in a room); after that, `room.py retry <room> <member>` takes its last failed turn again. A spent quota or
+a policy refusal is not retried: the error line says which.
 
 ## Level 1: a council
 1. **Discuss.** `room.py round <room> --note "<what this round is for>"`: members speak in order, each sees the turns before.
