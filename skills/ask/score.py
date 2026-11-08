@@ -13,6 +13,7 @@ import math
 import statistics
 
 import experience
+import scorecard
 import route
 
 
@@ -40,6 +41,10 @@ def quality(role, provider, model, rows, rules, bench, effort=None):
         top = bench.get('sources', {}).get(metric, {}).get('top')
         if value is not None and top and math.isfinite(float(value)) and float(top) > 0:
             values.append(max(0., min(1., float(value) / float(top))))
+    # ASK-04: with enough judged writer conversations for this role, their verdict share is the quality.
+    observed = scorecard.verdict_quality(role, provider, model, rows, rules)
+    if observed is not None:
+        return observed
     prior = statistics.mean(values) if values else experience.prior(model, role, rules, bench)
     evidence = experience.evidence(role, model, provider, rows, rules)
     weight = rules.get('experience', {}).get('prior_weight', 2)

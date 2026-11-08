@@ -69,6 +69,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `experience` | how far writer verdicts, capped runs and timeouts may move a role's order: `enabled`; `values` (what `ok`, `fixed`, `rejected`, `capped`, `timeout` are worth); `prior`, `prior_weight` (the start from `benchmarks.json`); `other_role_weight`, `role_category` (evidence from related roles); `window_days`, `min_evidence`; `demote_below`, `demote_twice_below`, `promote_min_evidence`, `promote_above`; `probation_verdicts`, `probation_tokens` (an expensive model with few verdicts) |
 | `capabilities` | notes on what a model did well or badly, with evidence; shown by `--list --notes` |
 | `score_defaults` | `owner_step`, `owner_cap` (the bonus for a row's place in the role's order), `prior_runs`, `size_clamp`; `burn_floor` (minimum cost multiplier, 0.1), `recent_hours` (24), `history_min_span_h` (2), `history_min_gap_s` (600) |
+| `scorecard` | `window_days` (30), `min_judged` (10): `ask.py --scorecard` counts the latest writer verdict of each conversation over the window; with `min_judged` judged conversations for a provider, model and role, their share (ok + fixed) / judged is that role's quality in the score, below it the usual quality holds |
 
 ## Environment variables
 
