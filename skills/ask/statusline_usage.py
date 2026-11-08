@@ -8,6 +8,13 @@ from datetime import datetime, timezone
 
 
 WEEKLY_LABEL = "Weekly · all models"
+# The words a person reads, in the language ASK_LANG names (as in limits.py, not imported: the line runs often).
+LINE_WORDS = {
+    "uk": {"week": "тиждень", "five_hour": "5 год", "left": "лишилось {pct}%", "reset": "скидання {at}",
+           "days": ("пн", "вт", "ср", "чт", "пт", "сб", "нд")},
+    "en": {"week": "week", "five_hour": "5h", "left": "{pct}% left", "reset": "resets {at}",
+           "days": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")},
+}
 STALE_S = 6 * 3600  # the router's CLAUDE_STALE_SECONDS: a window older than this is not passed off as fresh
 
 
@@ -41,6 +48,27 @@ def _percent(window):
         except (ValueError, OverflowError):
             pass
     return None
+
+
+def _words():
+    value = (os.environ.get("ASK_LANG") or "").strip().lower()
+    return LINE_WORDS.get(value, LINE_WORDS["en"])
+
+
+def _window_text(name, window, now, words):
+    """'week: 59% left, resets Thu 17:00' for one window, or None when it has no usable percentage."""
+    used = _percent(window)
+    if used is None:
+        return None
+    text = "{}: {}".format(words[name], words["left"].format(pct=min(100, max(0, 100 - used))))
+    reset = _reset(window.get("resets_at"))
+    if reset is not None:
+        local = reset.astimezone()
+        at = local.strftime("%H:%M")
+        if (reset - now).total_seconds() > 86400:
+            at = "{} {}".format(words["days"][local.weekday()], at)
+        text += ", " + words["reset"].format(at=at)
+    return text
 
 
 def _write_usage(percent, reset, now):
@@ -118,15 +146,11 @@ def main(stdin_text, now=None):
         weekly = _object(rates.get("seven_day"))
         percent = _percent(weekly)
         reset = _reset(weekly.get("resets_at"))
-        if percent is not None:
-            text = "7d {}%".format(percent)
-            if reset is not None:
-                fmt = "%a %H:%M" if (reset - now).total_seconds() > 86400 else "%H:%M"
-                text += " ({})".format(reset.astimezone().strftime(fmt))
-            parts.append(text)
-        short_percent = _percent(_object(rates.get("five_hour")))
-        if short_percent is not None:
-            parts.append("5h {}%".format(short_percent))
+        words = _words()
+        for name, window in (("week", weekly), ("five_hour", _object(rates.get("five_hour")))):
+            text = _window_text(name, window, now, words)
+            if text is not None:
+                parts.append(text)
         if percent is not None:
             try:
                 _write_usage(percent, reset, now)
