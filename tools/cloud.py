@@ -63,7 +63,11 @@ def claude_cmd():
     """The claude CLI as a list; CLOUD_CLAUDE_CMD replaces it (the tests' fake, or another install)."""
     raw = os.environ.get("CLOUD_CLAUDE_CMD")
     if raw:
-        return shlex.split(raw, posix=os.name != "nt")
+        if os.name != "nt":
+            return shlex.split(raw)
+        # Non-posix split keeps backslashes in Windows paths but leaves the quotes on: drop one surrounding pair.
+        return [w[1:-1] if len(w) > 1 and w[0] == w[-1] and w[0] in "\"'" else w
+                for w in shlex.split(raw, posix=False)]
     return [route._providers().get(PROVIDER).detect().get("path") or "claude"]
 
 
