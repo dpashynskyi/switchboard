@@ -2143,6 +2143,11 @@ class ProviderTests(unittest.TestCase):
             st["agy_models"] = ["gemini-4-argon-high", "gemini-3.8-flash-high"]
             res = route.pick("hard", fake=st)
             self.assertIn(res["model"], ("gemini-4-argon-high", "gpt-6.1-sol"), res["message"])
+            # No agy or Codex model at all: a Claude subagent on the newest Fable.
+            st["agy_models"] = []
+            st["codex_models"] = {"result": {"data": [], "nextCursor": None}}
+            res = route.pick("hard", fake=st)
+            self.assertEqual((res["provider"], res["model"]), ("claude-subscription", "claude-fable-5-2"), res["message"])
 
     def test_codex_efforts_from_its_live_list(self):
         codex = providers.get("codex", fake=self.state())

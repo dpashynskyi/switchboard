@@ -53,7 +53,7 @@ python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name      
 | `writer` | a writer agent on a brief (`tools/writer.py`) | cloud models, then a Claude subagent (exit 6) |
 | `code-writer` | a patch without a build engine | `no_engine`: `--engine` is refused |
 | `analysis` | reading code and records into a findings file | `no_engine` |
-| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then GPT-6.1 or Argon, then a Claude Opus subagent (exit 6) |
+| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then GPT-6.1 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
 
 A role row names a model (`{"provider": "agy", "model": "gemini-4-argon-high"}`) or wishes for one:
 `"prefer": [{"family": "gemini-4-argon*", "effort": ">=high"}, {"family": "gpt-6.1*"}]`. A wish is matched against what

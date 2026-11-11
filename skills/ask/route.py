@@ -54,7 +54,7 @@ OLLAMA_DEFAULT = "http://127.0.0.1:11434"
 
 
 DEFAULT_SUBSCRIPTION_MODELS = [
-    "claude-fable-5-1",
+    "claude-fable-5-2",
     "claude-opus-5-5",
     "claude-sonnet-5-5",
     "claude-haiku-5-5",
