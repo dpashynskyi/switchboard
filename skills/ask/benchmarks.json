@@ -17,7 +17,7 @@
     },
     "aa-intelligence": {
       "category": "general",
-      "top": 60,
+      "top": 65,
       "url": "https://artificialanalysis.ai/leaderboards/models",
       "read_at": "2026-11-05"
     },
@@ -67,12 +67,18 @@
       "benchlm-coding": 81.7,
       "llmstats-coding": 48.7
     },
+    "claude-fable-5-2": {
+      "benchlm-coding": 86.3
+    },
     "claude-fable-5-1": {
       "benchlm-coding": 76.4
     },
     "gpt-6-astra": {
       "benchlm-coding": 74.7,
       "llmstats-coding": 46.7
+    },
+    "gemini-4-carbon": {
+      "benchlm-coding": 80.5
     },
     "gemini-4-argon": {
       "benchlm-coding": 72.2,
@@ -198,6 +204,22 @@
       "aa-mrcr": 19.4,
       "minutes_per_task": 2.5,
       "output_tokens_per_task": 20856.0
+    },
+    "claude-fable-5-2-max": {
+      "aa-intelligence": 65,
+      "minutes_per_task": 45.0
+    },
+    "claude-fable-5-2-xhigh": {
+      "aa-intelligence": 62
+    },
+    "claude-fable-5-2-high": {
+      "aa-intelligence": 62
+    },
+    "claude-fable-5-2-medium": {
+      "aa-intelligence": 56
+    },
+    "claude-fable-5-2-low": {
+      "aa-intelligence": 54
     },
     "claude-fable-5-1-max": {
       "aa-intelligence": 49.2,
@@ -496,6 +518,16 @@
       "aa-mrcr": 15.0,
       "minutes_per_task": 1.8,
       "output_tokens_per_task": 10059.0
+    },
+    "gemini-4-carbon-high": {
+      "aa-intelligence": 60,
+      "minutes_per_task": 26.1
+    },
+    "gemini-4-carbon-medium": {
+      "aa-intelligence": 58
+    },
+    "gemini-4-carbon-low": {
+      "aa-intelligence": 54
     },
     "gemini-4-argon-high": {
       "aa-intelligence": 50.4,
