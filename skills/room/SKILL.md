@@ -20,6 +20,9 @@ and the Claude subscription is not a member.
 2. Name the members and the accounts their calls go to before the first turn, as `/ask` does in a work context.
 
 ## Level 0: a group chat
+The owner can talk to a room directly with `python3 ~/switchboard/tools/chat.py [room]` in their own terminal;
+the moderator then only reads.
+
 `room.py say <room> "<the user's words, word for word>"` (or `--to <member>`). Show each answer word for word under its
 member's name; your own view, if any, after. A question of your own (not the user's words) goes with `--as moderator`,
 so the transcript does not put it in the user's mouth.

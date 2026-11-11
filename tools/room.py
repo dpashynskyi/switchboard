@@ -27,6 +27,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -248,7 +249,8 @@ def brief(room, member, task):
             "Some members may not run commands at all: if a tool or command is refused, answer from the transcript "
             "and what you know without it. "
             "Be brief, say where you agree or disagree with the others, and add what is new.")
-    lines = [render(e) for e in unseen if e.get("kind") not in ("open",)]
+    # Its own entries are left out: a threaded member already has them in its conversation.
+    lines = [render(e) for e in unseen if e.get("kind") not in ("open",) and e.get("by") != member["name"]]
     return f"{head}\n\nThe transcript since your last turn:\n" + ("\n".join(lines) or "(nothing yet)") + f"\n\n{task}"
 
 
@@ -257,6 +259,9 @@ RETRY_NOTE = ("Your last attempt at this turn ended without an answer. Answer no
 
 
 def take_turn(room, member, task, timeout):
+    started = time.monotonic()
+    # What this turn reads: entries others add while it runs stay unseen for its next turn.
+    read_to = len(room.entries())
     answer, thread, error = call_member(member, brief(room, member, task), timeout)
     if error and error.startswith("exit 2:"):
         # Once, from the transcript only: a member that may not run commands ends its turn without text (exit 2) on
@@ -266,27 +271,29 @@ def take_turn(room, member, task, timeout):
         answer, again, second = call_member(member, brief(room, member, task + "\n\n" + RETRY_NOTE), timeout)
         thread = again or thread
         error = f"{error}; once more from the transcript: {second}" if second else None
-    return member["name"], answer, thread, error, task
+    return member["name"], answer, thread, error, task, round(time.monotonic() - started, 1), read_to
 
 
-def record_turn(room, name, answer, thread, error, task=""):
+def record_turn(room, name, answer, thread, error, task="", seconds=None, read_to=None):
     member = room.member(name)
     if thread:
         member["thread"] = thread
-    member["seen"] = len(room.entries())
+    member["seen"] = len(room.entries()) if read_to is None else read_to
     if error:
-        item = room.append({"kind": "error", "by": name, "text": error, "task": task})
+        item = room.append({"kind": "error", "by": name, "text": error, "task": task, "seconds": seconds})
         room.save()
         return [item]
     reply, structured = parse_reply(answer)
-    said = room.append({"kind": "say", "by": name, "text": str(reply.get("say") or answer), "structured": structured})
+    said = room.append({"kind": "say", "by": name, "text": str(reply.get("say") or answer), "structured": structured,
+                        "seconds": seconds, "model": member.get("model")})
     out = [said]
     proposal = reply.get("propose")
     if isinstance(proposal, dict) and proposal.get("kind") in KINDS and proposal.get("body"):
         out.append(add_proposal(room, proposal["kind"], proposal["body"], name))
     if reply.get("ask_owner"):
         out.append(room.append({"kind": "ask_owner", "by": name, "text": str(reply["ask_owner"])}))
-    member["seen"] = len(room.entries())
+    if read_to is None:
+        member["seen"] = len(room.entries())
     room.save()
     return out
 
@@ -332,30 +339,80 @@ def members_for(room, to=None):
     return [room.member(to)] if to else list(room.config["members"])
 
 
-def parallel_turns(room, members, task, timeout):
-    workers = max(1, len(members))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(take_turn, room, m, task, timeout) for m in members]
-        results = []
-        for future in concurrent.futures.as_completed(futures):
-            results.append(future.result())
-    # Answers land in the order they finished.
-    return [item for r in results for item in record_turn(room, *r)]
+def parallel_turns(room, members, task, timeout, on_item=None, on_interrupt=None):
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(members)))
+    pending = {pool.submit(take_turn, room, m, task, timeout) for m in members}
+    out = []
+
+    def collect():
+        for future in concurrent.futures.as_completed(list(pending)):
+            # Out of pending first: an interrupt while it is recorded must not record it twice.
+            pending.discard(future)
+            entries = record_turn(room, *future.result())
+            for item in entries:
+                out.append(item)
+                if on_item:
+                    on_item(item)
+
+    try:
+        try:
+            collect()
+        except KeyboardInterrupt:
+            if on_interrupt:
+                on_interrupt()
+            try:
+                collect()
+            except KeyboardInterrupt:
+                pass
+            raise
+    finally:
+        # A second interrupt leaves unfinished futures unrecorded without blocking shutdown here.
+        pool.shutdown(wait=False)
+    return out
+
+
+def round_turns(room, task, timeout, on_item=None):
+    out = []
+    # The worker keeps the running turn alive while the main thread handles Ctrl-C.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        for member in room.config["members"]:
+            future = pool.submit(take_turn, room, member, task, timeout)
+            interrupted = False
+            while True:
+                try:
+                    result = future.result()
+                    break
+                except KeyboardInterrupt:
+                    interrupted = True
+            for item in record_turn(room, *result):
+                out.append(item)
+                if on_item:
+                    on_item(item)
+            if interrupted:
+                raise KeyboardInterrupt
+    finally:
+        pool.shutdown(wait=False)
+    return out
 
 
 def answered(entries):
     return 0 if any(e.get("kind") == "say" for e in entries) else 4
 
 
-def cmd_new(a):
+def open_room(slug, member_specs, rule="veto", arbiter=None, max_rounds=6, topic=""):
     members = []
-    for spec in a.member:
+    for spec in member_specs:
         name, sep, args = spec.partition("=")
         if not sep or not name.strip() or not args.strip():
-            raise SystemExit("--member is name=<ask.py arguments>, e.g. codex=--codex gpt-5.5")
+            raise ValueError("--member is name=<ask.py arguments>, e.g. codex=--codex gpt-5.5")
         members.append({"name": name.strip(), "ask": args.strip()})
+    return Room.create(slug, members, rule, arbiter, max_rounds, topic)
+
+
+def cmd_new(a):
     try:
-        room = Room.create(a.slug, members, a.rule, a.arbiter, a.max_rounds, a.topic or "")
+        room = open_room(a.slug, a.member, a.rule, a.arbiter, a.max_rounds, a.topic or "")
     except ValueError as error:
         raise SystemExit(str(error))
     print(room.path)
@@ -382,13 +439,7 @@ def cmd_round(a):
         return 3
     room.append({"kind": "round", "text": a.note or ""})
     task = (a.note + "\n\n" if a.note else "") + "Your turn in this round. " + REPLY_SHAPE
-    out = []
-    # In order, so each member sees the turns before it in the same round.
-    for member in room.config["members"]:
-        result = take_turn(room, member, task, a.timeout)
-        for item in record_turn(room, *result):
-            out.append(item)
-            print(render(item), flush=True)
+    out = round_turns(room, task, a.timeout, on_item=lambda item: print(render(item), flush=True))
     return answered(out)
 
 
@@ -411,7 +462,7 @@ def cmd_vote(a):
     votes = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(room.config["members"])) as pool:
         results = list(pool.map(lambda m: take_turn(room, m, task, a.timeout), room.config["members"]))
-    for name, answer, thread, error, _ in results:
+    for name, answer, thread, error, _, seconds, _read_to in results:
         member = room.member(name)
         if thread:
             member["thread"] = thread
@@ -471,10 +522,14 @@ def cmd_tail(a):
     return 0
 
 
+def list_rooms():
+    return sorted((p.parent for p in rooms_dir().glob("*/room.json")), key=lambda p: p.name)
+
+
 def cmd_list(a):
-    for path in sorted(rooms_dir().glob("*/room.json")):
-        config = json.loads(path.read_text(encoding="utf-8"))
-        print(f"{path.parent.name}  {config.get('rule')}  {', '.join(m['name'] for m in config.get('members', []))}"
+    for path in list_rooms():
+        config = json.loads((path / "room.json").read_text(encoding="utf-8"))
+        print(f"{path.name}  {config.get('rule')}  {', '.join(m['name'] for m in config.get('members', []))}"
               f"  {config.get('topic', '')[:60]}")
     return 0
 

@@ -239,6 +239,31 @@ options:
   -h, --help            show this help message and exit
 ```
 
+## chat
+
+```text
+usage: chat.py [-h] [--new SLUG] [--member NAME=ARGS] [--topic TOPIC]
+               [--rule {majority,unanimous,veto,arbiter}] [--arbiter ARBITER] [--timeout SECONDS]
+               [--no-color] [-n N]
+               [ROOM]
+
+Room chat: talk directly to a room in a terminal.
+
+positional arguments:
+  ROOM                  room slug or folder; default: the room last talked in
+
+options:
+  -h, --help            show this help message and exit
+  --new SLUG            open a new room
+  --member NAME=ARGS    member ask.py arguments (repeatable)
+  --topic TOPIC         what the room is about
+  --rule {majority,unanimous,veto,arbiter}
+  --arbiter ARBITER     member who decides with the arbiter rule
+  --timeout SECONDS
+  --no-color
+  -n N                  transcript entries shown on start (default: 10)
+```
+
 ## cloud
 
 ```text

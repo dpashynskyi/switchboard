@@ -10,7 +10,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = [('ask', 'skills/ask/ask.py'), ('writer', 'tools/writer.py'), ('limits', 'skills/ask/limits.py'),
            ('preset_edit', 'skills/ask/preset_edit.py'), ('dashboard', 'skills/ask/dashboard.py'), ('experience', 'skills/ask/experience.py'),
-           ('comment_check', 'tools/comment_check.py'), ('room', 'tools/room.py'), ('cloud', 'tools/cloud.py')]
+           ('comment_check', 'tools/comment_check.py'), ('room', 'tools/room.py'), ('chat', 'tools/chat.py'), ('cloud', 'tools/cloud.py')]
 # argparse lays out help differently from one Python to the next ("optional arguments:" became "options:" in 3.10,
 # usage lines wrap otherwise): the page names the Python it was made under, and only that Python compares it.
 PYTHON = f"{sys.version_info[0]}.{sys.version_info[1]}"

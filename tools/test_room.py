@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import textwrap
+import threading
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
@@ -229,6 +230,108 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(str(room.Room.find("t").path), path)
         _, out, _ = self.run_room("list")
         self.assertIn("alpha", out)
+
+    def test_turn_metadata_in_transcript(self):
+        path = self.open_room("alpha")
+        self.run_room("say", path, "hello")
+        item = room.Room(path).entries()[-1]
+        self.assertEqual(item["model"], "fake-alpha")
+        self.assertIsInstance(item["seconds"], float)
+        self.assertGreaterEqual(item["seconds"], 0)
+
+    def test_parallel_callback_records_in_completion_order(self):
+        current = room.Room(self.open_room("planner", "asker"))
+        callbacks = []
+        real_completed = room.concurrent.futures.as_completed
+
+        def reversed_completion(futures):
+            done = list(real_completed(futures))
+            return iter(sorted(done, key=lambda f: f.result()[0]))
+
+        def receive(item):
+            self.assertIn(item, current.entries())
+            callbacks.append(item)
+
+        with mock.patch.object(room.concurrent.futures, "as_completed", side_effect=reversed_completion):
+            entries = room.parallel_turns(current, current.config["members"], "plan", 5, on_item=receive)
+        self.assertEqual(callbacks, entries)
+        self.assertEqual([e["kind"] for e in entries], ["say", "ask_owner", "say", "proposal"])
+        self.assertEqual([e["by"] for e in entries], ["asker", "asker", "planner", "planner"])
+
+    def test_parallel_callback_arrives_before_other_turn_finishes(self):
+        current = room.Room(self.open_room("alpha", "beta"))
+        released = threading.Event()
+        self.addCleanup(released.set)
+        callbacks = []
+
+        def turn(current, member, task, timeout):
+            if member["name"] == "alpha":
+                if not released.wait(5):
+                    raise AssertionError("callback did not release the unfinished turn")
+            return member["name"], "hello", None, None, task, 0.1
+
+        def receive(item):
+            callbacks.append(item["by"])
+            if item["by"] == "beta":
+                self.assertFalse(released.is_set())
+                released.set()
+
+        with mock.patch.object(room, "take_turn", side_effect=turn):
+            room.parallel_turns(current, current.config["members"], "discuss", 5, on_item=receive)
+        self.assertEqual(callbacks, ["beta", "alpha"])
+
+    def test_seconds_include_both_attempts_and_errors(self):
+        current = room.Room(self.open_room("alpha"))
+        member = current.member("alpha")
+        with mock.patch.object(room.time, "monotonic", side_effect=[10.0, 12.26]), mock.patch.object(
+                room, "call_member", side_effect=[(None, None, "exit 2: denied"), ("hello", None, None)]):
+            result = room.take_turn(current, member, "discuss", 5)
+        self.assertEqual(result[5], 2.3)
+        self.assertEqual(result[6], 1)
+        error = room.record_turn(current, "alpha", None, None, "failed", seconds=1.2)[0]
+        self.assertEqual(error["seconds"], 1.2)
+
+    def test_round_turns_callback_and_order(self):
+        current = room.Room(self.open_room("alpha", "beta"))
+        entries = room.round_turns(current, "discuss", 5)
+        self.assertEqual([e["by"] for e in entries], ["alpha", "beta"])
+        self.assertIn("saw alpha: True", entries[1]["text"])
+
+    def test_parallel_interrupt_notifies_then_drains(self):
+        current = room.Room(self.open_room("alpha", "beta"))
+        real_completed = room.concurrent.futures.as_completed
+        events = []
+        calls = []
+
+        def interrupt_once(futures):
+            calls.append(1)
+            if len(calls) == 1:
+                raise KeyboardInterrupt
+            return real_completed(futures)
+
+        with mock.patch.object(room.concurrent.futures, "as_completed", side_effect=interrupt_once):
+            with self.assertRaises(KeyboardInterrupt):
+                room.parallel_turns(current, current.config["members"], "discuss", 5,
+                                    on_item=lambda item: events.append(item["kind"]),
+                                    on_interrupt=lambda: events.append("interrupted"))
+        self.assertEqual(events, ["interrupted", "say", "say"])
+        self.assertEqual(len(current.entries()), 3)
+
+    def test_round_interrupt_records_running_turn_then_stops(self):
+        current = room.Room(self.open_room("alpha", "beta"))
+        original = room.concurrent.futures.Future.result
+        interrupted = []
+
+        def interrupt_once(future, *args, **kwargs):
+            if not interrupted:
+                interrupted.append(True)
+                raise KeyboardInterrupt
+            return original(future, *args, **kwargs)
+
+        with mock.patch.object(room.concurrent.futures.Future, "result", interrupt_once):
+            with self.assertRaises(KeyboardInterrupt):
+                room.round_turns(current, "discuss", 5)
+        self.assertEqual([e.get("by") for e in current.entries() if e["kind"] == "say"], ["alpha"])
 
     def test_parse_reply_fenced(self):
         reply, structured = room.parse_reply('Sure:\n```json\n{"say": "x"}\n```')
