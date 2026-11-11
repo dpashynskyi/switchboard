@@ -2131,6 +2131,19 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(argon["ids"]["high"], "gemini-4-argon-high")
         self.assertEqual(agy.efforts("gemini-4-argon-low"), ["low", "medium", "high"])
 
+    def test_hard_role_takes_carbon_when_agy_offers_it(self):
+        # The shipped roles.json, not the test one: the role lives there.
+        st = self.state()
+        st["agy_models"] = ["gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
+                            "gemini-4-argon-high", "gemini-3.8-flash-high"]
+        with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
+            res = route.pick("hard", fake=st)
+            self.assertEqual((res["provider"], res["model"]), ("agy", "gemini-4-carbon-high"), res["message"])
+            # Without Carbon (an account below Ultra), the role falls through to the next row.
+            st["agy_models"] = ["gemini-4-argon-high", "gemini-3.8-flash-high"]
+            res = route.pick("hard", fake=st)
+            self.assertIn(res["model"], ("gemini-4-argon-high", "gpt-6.1-sol"), res["message"])
+
     def test_codex_efforts_from_its_live_list(self):
         codex = providers.get("codex", fake=self.state())
         self.assertEqual(codex.efforts("gpt-6.1-sol"), ["high"])

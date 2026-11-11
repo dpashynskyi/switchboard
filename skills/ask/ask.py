@@ -1098,7 +1098,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("name", nargs="?", help="model id (see --list)")
     p.add_argument("text", nargs="*")
-    p.add_argument("--role", help="route by role: review, second-opinion, first-read, draft, index, writer, code-writer, analysis, engine-writer (roles.json)")
+    p.add_argument("--role", help="route by role: review, second-opinion, first-read, draft, index, writer, code-writer, analysis, hard, engine-writer (roles.json)")
     p.add_argument("--tokens", type=int, default=None, help="override estimated billed tokens for pre-run fit and reservation")
     p.add_argument("--force", action="store_true", help="run an explicitly named model even if its estimate crosses the floor")
     p.add_argument("--continue", dest="carry_on", action="store_true", help="agy/Codex: carry on the last /ask conversation")

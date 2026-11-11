@@ -3,7 +3,7 @@
 Ask another model from Claude Code, verbatim. One router over **agy** (Antigravity CLI: Gemini, Claude and GPT on a Google
 quota), **Codex** (the ChatGPT plan), **Ollama** and any OpenAI-compatible local server (LM Studio, llama.cpp, vLLM, MLX, Jan,
 LocalAI), that knows each pool's weekly quota and pace and picks
-a model by **role**: `review`, `second-opinion`, `first-read`, `draft`, `index`, `writer`, `code-writer`, `analysis`.
+a model by **role**: `review`, `second-opinion`, `first-read`, `draft`, `index`, `writer`, `code-writer`, `analysis`, `hard`.
 
 | Part | What it does |
 |---|---|
