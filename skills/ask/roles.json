@@ -8,7 +8,7 @@
   },
   "models": {},
   "subscription_models": [
-    "claude-fable-5-1",
+    "claude-fable-5-2",
     "claude-opus-5-5",
     "claude-sonnet-5-5",
     "claude-haiku-5-5"
@@ -240,6 +240,46 @@
         "aa_time_scale": 1.0
       }
     },
+    "hard": {
+      "prefer": [
+        {
+          "family": "gemini-4-carbon*",
+          "effort": ">=high"
+        },
+        {
+          "any": [
+            {
+              "family": "gpt-6.1*"
+            },
+            {
+              "family": "gemini-4-argon*"
+            }
+          ],
+          "effort": ">=high"
+        },
+        {
+          "family": "claude-fable*",
+          "provider": "claude-subscription"
+        },
+        {
+          "family": "claude-opus*",
+          "provider": "claude-subscription"
+        }
+      ],
+      "exit_code": 6,
+      "score": {
+        "mode": "shadow",
+        "metrics": [
+          "aa-frontiercode",
+          "aa-terminal-bench",
+          "benchlm-coding"
+        ],
+        "time": 0.1,
+        "cost": 0.3,
+        "time_budget_s": 3600,
+        "aa_time_scale": 1.0
+      }
+    },
     "index": {
       "local_only": true,
       "prefer": [
@@ -301,7 +341,8 @@
       "analysis": "code",
       "code-writer": "code",
       "writer": "code",
-      "second-opinion": "code"
+      "second-opinion": "code",
+      "hard": "code"
     }
   },
   "capabilities": {},
@@ -309,6 +350,7 @@
     "writer": 300000,
     "analysis": 500000,
     "code-writer": 300000,
+    "hard": 400000,
     "review": 60000,
     "second-opinion": 20000,
     "first-read": 80000,

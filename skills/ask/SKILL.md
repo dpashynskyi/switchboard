@@ -1,6 +1,6 @@
 ---
 name: ask
-description: Pass a question (or an image request, "draw") to another model word for word and bring its answer back word for word - Gemini, Claude and GPT models through the Antigravity CLI (agy, a Google quota), GPT through Codex (a ChatGPT plan), local models through Ollama; or by role (review, second-opinion, first-read, draft, index, writer, code-writer, analysis) and the router picks the model by quota, pace, experience and the GPU. Use on /ask, "ask gemini", "what would gpt say", or when you offer a second opinion and the user agrees.
+description: Pass a question (or an image request, "draw") to another model word for word and bring its answer back word for word - Gemini, Claude and GPT models through the Antigravity CLI (agy, a Google quota), GPT through Codex (a ChatGPT plan), local models through Ollama; or by role (review, second-opinion, first-read, draft, index, writer, code-writer, analysis, hard) and the router picks the model by quota, pace, experience and the GPU. Use on /ask, "ask gemini", "what would gpt say", or when you offer a second opinion and the user agrees.
 ---
 
 # /ask: ask another model
@@ -53,6 +53,7 @@ python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name      
 | `writer` | a writer agent on a brief (`tools/writer.py`) | cloud models, then a Claude subagent (exit 6) |
 | `code-writer` | a patch without a build engine | `no_engine`: `--engine` is refused |
 | `analysis` | reading code and records into a findings file | `no_engine` |
+| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then GPT-6.1 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
 
 A role row names a model (`{"provider": "agy", "model": "gemini-4-argon-high"}`) or wishes for one:
 `"prefer": [{"family": "gemini-4-argon*", "effort": ">=high"}, {"family": "gpt-6.1*"}]`. A wish is matched against what

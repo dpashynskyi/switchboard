@@ -24,7 +24,7 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --role ROLE           route by role: review, second-opinion, first-read, draft, index, writer, code-
-                        writer, analysis, engine-writer (roles.json)
+                        writer, analysis, hard, engine-writer (roles.json)
   --tokens TOKENS       override estimated billed tokens for pre-run fit and reservation
   --force               run an explicitly named model even if its estimate crosses the floor
   --continue            agy/Codex: carry on the last /ask conversation
