@@ -36,7 +36,8 @@ that may go and should go. Every model passed over is said on stderr as `[passed
     With 10 or more judged writer conversations in 30 days for a model and role (`scorecard` in roles.json), the
     quality is their verdict share, (ok + fixed) / judged, the latest verdict of each; `ask.py --scorecard` shows it.
 11. **The Claude subscription** is the last resort: the script never calls it; it prints `use a Claude subagent (<model>)`
-    and exits 6, and the session runs that model as its own subagent.
+    and exits 6, and the session runs that model as its own subagent. Only a model the user names with `--claude ID` is
+    called by the script itself (`claude -p`), never one the router picks.
 
 When a call fails on quota or answers nothing, the role goes on to its next model; a deadline (exit 9) or the token
 cap (exit 5) does not move it. `ask.py --status` shows the pools, what burns first and the GPU; `ask.py --list` the

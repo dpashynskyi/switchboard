@@ -39,7 +39,7 @@ python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name      
 | Codex | `codex app-server`, a ChatGPT plan | the weekly and 5-hour windows from `account/rateLimits/read` |
 | Ollama | local models on this machine's GPU | the GPU (free VRAM, a lock) |
 | a local server | any OpenAI-compatible server named in `local_servers` (LM Studio, llama.cpp, vLLM, MLX, Jan, LocalAI); `--server NAME <model>` | the GPU lock; VRAM only with a configured `size_gb` |
-| Claude subscription | the session's own subagents only: the script never calls them, it prints `use a Claude subagent (<model>)` and exits 6 | `~/.cache/ask/claude_usage.json`, written by the session |
+| Claude subscription | the session's own subagents: the router never calls them, it prints `use a Claude subagent (<model>)` and exits 6; named with `--claude ID` (or `opus`, `sonnet`, `haiku`, `fable`) the script calls that model with `claude -p`, no tools, in an empty folder, and carries on with `--thread` | `~/.cache/ask/claude_usage.json`, written by the session |
 
 ## Roles (`--role`, `roles.json`)
 

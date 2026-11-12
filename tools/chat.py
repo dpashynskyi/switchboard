@@ -4,7 +4,7 @@
                           [--topic TEXT] [--rule RULE] [--arbiter NAME]
                           [--timeout SECONDS] [--no-color] [-n N]
 
-Commands: /help, /round [note], /tail [n], /members, /rooms, /quit, /exit.
+Commands: /help, /round [note], /tail [n], /members, /claude [MODEL [NAME]], /add NAME=ARGS, /rooms, /quit, /exit.
 """
 import argparse
 import os
@@ -24,7 +24,9 @@ import room  # noqa: E402
 
 PALETTE = (36, 33, 35, 32, 34, 31)
 HELP = ("/help  list commands", "/round [note]  take one council round", "/tail [n]  show the transcript (default 20)",
-        "/members  show members", "/rooms  list rooms", "/quit  leave room chat", "/exit  leave room chat")
+        "/members  show members", "/claude  list the Claude models",
+        "/claude MODEL [NAME]  add a Claude model (opus, sonnet, haiku, fable or an id) to the room; then @NAME",
+        "/add NAME=ARGS  add any member by its ask.py arguments, e.g. /add codex=--codex gpt-5.5", "/rooms  list rooms", "/quit  leave room chat", "/exit  leave room chat")
 INTERRUPTED = "[interrupted: the answers still running are recorded as they end]"
 
 
@@ -96,6 +98,30 @@ def run(current, lines, out, colors, timeout):
                     print("\n".join(HELP), file=out)
                 elif command == "/members":
                     show_members(current, out, colors)
+                elif command in ("/claude", "/add"):
+                    if command == "/claude":
+                        words = arg.split()
+                        if not words or len(words) > 2:
+                            models = room.claude_models()
+                            print("Claude models: " + ", ".join(models) + "\nUsage: /claude MODEL [NAME], e.g. /claude opus",
+                                  file=out)
+                            continue
+                        model = room.claude_model(words[0])
+                        name = words[1] if len(words) > 1 else room.claude_name(model)
+                        ask = "--claude " + model
+                    else:
+                        name, sep, ask = arg.partition("=")
+                        if not sep:
+                            print("Usage: /add NAME=ARGS, e.g. /add codex=--codex gpt-5.5", file=out)
+                            continue
+                    try:
+                        emit(current.add_member(name, ask))
+                    except ValueError as error:
+                        print(str(error), file=out)
+                        continue
+                    if colors is not None:
+                        colors[name.strip()] = PALETTE[(len(current.config["members"]) - 1) % len(PALETTE)]
+                    print(f"Talk to it with @{name.strip()}, or to everyone as before.", file=out)
                 elif command == "/rooms":
                     for path in room.list_rooms():
                         print(("* " if path.resolve() == current.path.resolve() else "  ") + path.name, file=out)

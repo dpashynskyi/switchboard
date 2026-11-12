@@ -56,6 +56,21 @@ class ChatTests(unittest.TestCase):
         self.run_chat(current, ["  hello  \n"])
         self.assertEqual(current.entries()[1]["text"], "  hello  ")
 
+    def test_claude_and_add_members_mid_chat(self):
+        current = self.create()
+        with mock.patch.object(room, "claude_models", return_value=["claude-fable-5-2", "claude-opus-5-5"]):
+            out = self.run_chat(current, ["/claude", "/claude opus", "/claude fable deep", "/claude opus",
+                                          "/add gamma=gamma", "/add bad", "@gamma hi", "/members", "/quit"])
+        self.assertIn("Claude models: claude-fable-5-2, claude-opus-5-5", out)
+        self.assertIn("opus joined the room (--claude claude-opus-5-5)", out)
+        self.assertIn("deep joined the room (--claude claude-fable-5-2)", out)
+        self.assertIn("the room already has a member opus", out)
+        self.assertIn("Usage: /add NAME=ARGS", out)
+        self.assertIn("gamma here", out)
+        names = [m["name"] for m in room.Room(current.path).config["members"]]
+        self.assertEqual(names, ["alpha", "beta", "opus", "deep", "gamma"])
+        self.assertEqual(room.claude_name("claude-fable-5-2"), "fable")
+
     def test_target_and_unknown_member(self):
         current = self.create()
         self.run_chat(current, ["@beta hello"])
