@@ -17,6 +17,8 @@ import argparse
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -371,6 +373,64 @@ def ask_codex(model, text, carry_on, timeout_s, effort=None, executable=None, ho
         if not out and (quota or code != 2):
             out = stderr.strip()
         return code, out, tokens, log_path, raw, status, thread_id, None
+
+
+def claude_cli():
+    """The claude CLI as a list; ASK_CLAUDE_CMD replaces it (the tests' fake, or another install)."""
+    raw = os.environ.get("ASK_CLAUDE_CMD")
+    if raw:
+        return shlex.split(raw, posix=os.name != "nt")
+    return [shutil.which("claude") or "claude"]
+
+
+def claude_model_id(name, rules=None):
+    """'opus' or 'Fable' -> the subscription's id that names it (claude-opus-5-5); a full id or an unknown name as given."""
+    raw = str(name or "").strip()
+    ids = (rules or {}).get("subscription_models") or route.DEFAULT_SUBSCRIPTION_MODELS
+    if raw in ids:
+        return raw
+    found = [m for m in ids if raw.lower() in m.lower().split("-")]
+    return found[0] if len(found) == 1 else raw
+
+
+def ask_claude(model, text, carry_on, timeout_s, effort=None):
+    """A Claude subscription model called by name (--claude): `claude -p` in an empty room, no tools, the question by
+    stdin. carry_on: a session id to resume. -> (code, text, tokens, log path, status, session id)."""
+    room = os.path.join(route.CACHE_DIR, "claude-room")
+    os.makedirs(room, exist_ok=True)
+    args = claude_cli() + ["-p", "--model", model, "--output-format", "json", "--tools", ""]
+    if effort:
+        args += ["--effort", effort]
+    if isinstance(carry_on, str) and carry_on:
+        args += ["--resume", carry_on]
+    try:
+        done = subprocess.run(args, input=text, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout_s, cwd=room)
+        code, stdout, stderr = done.returncode, done.stdout or "", done.stderr or ""
+    except subprocess.TimeoutExpired:
+        code, stdout, stderr = 4, "", f"claude timed out after {timeout_s} s"
+    except OSError as e:
+        code, stdout, stderr = 4, "", f"claude: {e} (install Claude Code, or set ASK_CLAUDE_CMD)"
+    log_path = route.save_raw_log(model, stdout + ("\n--- stderr ---\n" + stderr if stderr else ""))
+    try:
+        reply = json.loads(stdout.strip().splitlines()[-1]) if stdout.strip() else {}
+    except (ValueError, IndexError):
+        reply = {}
+    if not isinstance(reply, dict):
+        reply = {}
+    out = str(reply.get("result") or "").strip()
+    session = reply.get("session_id")
+    usage = reply.get("usage") or {}
+    tokens = {"input": usage.get("input_tokens"), "output": usage.get("output_tokens")}
+    tokens["total"] = sum(v for v in tokens.values() if isinstance(v, int))
+    failed = bool(reply.get("is_error")) or code != 0
+    quota = failed and (route.is_quota_error(code, out) or route.is_quota_error(code, stderr))
+    status = "quota" if quota else "timeout" if code == 4 and "timed out" in stderr else (
+        "error" if failed else "no_text" if not out else "ok")
+    if failed:
+        code = code or 2
+        out = out or stderr.strip() or stdout.strip() or "claude gave no reply"
+    return code, out, tokens, log_path, status, session
 
 
 def _last_conversations():
@@ -1110,6 +1170,7 @@ def main():
     providers.add_argument("--ollama", metavar="ID", help="explicit Ollama model id")
     providers.add_argument("--server", metavar="NAME", help="configured local OpenAI-compatible server")
     providers.add_argument("--codex", metavar="ID", help="explicit Codex model id")
+    providers.add_argument("--claude", metavar="ID", help="explicit Claude model id (claude -p on the subscription)")
     p.add_argument("--file", action="append", default=[], help="a file appended after the question (repeatable)")
     p.add_argument("--think", action="store_true", help="qwen3: think first (slower)")
     p.add_argument("--reasoning", choices=("file", "live", "show"), default="file")
@@ -1225,6 +1286,8 @@ def main():
     raw_words = list(a.text)
     target_name = a.name
     explicit_provider = next((pv for pv in ("agy", "ollama", "codex") if getattr(a, pv)), None)
+    if a.claude:
+        a.claude = claude_model_id(a.claude, route.load_roles())
     if a.server:
         if a.role or not a.name or a.server not in adapters.local_servers():
             p.error("--server requires a configured local server and model, without --role")
@@ -1235,6 +1298,12 @@ def main():
         if target_name is not None:
             raw_words.insert(0, target_name)
         target_name = {"provider": explicit_provider, "model": getattr(a, explicit_provider)}
+    elif a.claude:
+        if a.role:
+            p.error("--claude and --role cannot be combined")
+        if target_name is not None:
+            raw_words.insert(0, target_name)
+        target_name = {"provider": "claude-subscription", "model": a.claude}
     if a.role and target_name is not None:
         raw_words = [target_name] + raw_words
         target_name = None
@@ -1439,6 +1508,23 @@ def main():
         if offered and a.effort not in offered:
             print(route.yellow(f"[{label}: its list has no effort {a.effort} ({', '.join(offered)}); Codex decides]",
                                err_color), file=sys.stderr)
+
+    if where == "claude-subscription" and a.claude:
+        # Named with --claude: the user asked for this very model, so it is called (claude -p), not handed back.
+        _say_account(chk, err_color)
+        t0 = time.time()
+        code, out, tokens_used, log_path, st, session = ask_claude(model, text, a.thread, a.deadline or None,
+                                                                    effort=a.effort)
+        if session:
+            print(f"[conversation {session}: carry on with --thread {session}]", file=sys.stderr, flush=True)
+        route.journal("ask.py", None, model, where, model, tokens=tokens_used, seconds=time.time() - t0, status=st,
+                      log=log_path, pool=pool_desc, conversation=session, **pol_kw)
+        if code != 0:
+            print(route.red(f"{label}: {out[:300]}", err_color), file=sys.stderr)
+            return code
+        _print_header(model, pool_desc, [], warning=warning)
+        print(out or "(%s gave no text; ask again, plainly)" % label)
+        return 0
 
     if where == "claude-subscription":
         msg = f"use a Claude subagent ({model})"

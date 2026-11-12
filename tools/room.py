@@ -122,6 +122,17 @@ class Room:
             handle.write(json.dumps(item, ensure_ascii=False) + "\n")
         return item
 
+    def add_member(self, name, ask):
+        """A member joins an open room; on its first turn it reads the whole transcript."""
+        name, ask = str(name or "").strip(), str(ask or "").strip()
+        if not name or not ask or not re.match(r"^[\w.-]+$", name):
+            raise ValueError("a member is name=<ask.py arguments>, the name one word")
+        if any(m["name"] == name for m in self.config["members"]):
+            raise ValueError(f"the room already has a member {name}")
+        self.config["members"].append({"name": name, "ask": ask, "thread": None, "seen": 0, "veto_used": False})
+        self.save()
+        return self.append({"kind": "note", "by": "moderator", "text": f"{name} joined the room ({ask})"})
+
     def member(self, name):
         for member in self.config["members"]:
             if member["name"] == name:
@@ -142,6 +153,26 @@ class Room:
             if item.get("kind") == "round":
                 count += 1
         return count
+
+
+def claude_models():
+    """The Claude subscription's model ids, as /ask knows them (roles.json subscription_models)."""
+    sys.path.insert(0, str(ASK.parent))
+    import route
+    return list(route.load_roles().get("subscription_models") or route.DEFAULT_SUBSCRIPTION_MODELS)
+
+
+def claude_model(name):
+    """'opus' -> claude-opus-5-5; a full id, or a name no model carries, as given (ask.py --claude says what is wrong)."""
+    ids = claude_models()
+    found = [m for m in ids if name.lower() in m.lower().split("-")]
+    return name if name in ids or len(found) != 1 else found[0]
+
+
+def claude_name(model):
+    """claude-opus-5-5 -> opus: the member's name in the room."""
+    parts = [p for p in model.split("-") if p != "claude" and not p.isdigit()]
+    return parts[0] if parts else model
 
 
 def render(item):

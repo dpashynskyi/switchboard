@@ -21,7 +21,9 @@ and the Claude subscription is not a member.
 
 ## Level 0: a group chat
 The owner can talk to a room directly with `python3 ~/switchboard/tools/chat.py [room]` in their own terminal;
-the moderator then only reads.
+the moderator then only reads. In the chat `/claude opus` (or `sonnet`, `haiku`, `fable`, any Claude model id) adds that
+Claude model to the room as a member, `@opus` then talks to it; `/add NAME=ARGS` adds any other member by its `ask.py`
+arguments. A Claude member is `--claude <id>` (`claude -p` on the subscription), in `--member` too.
 
 `room.py say <room> "<the user's words, word for word>"` (or `--to <member>`). Show each answer word for word under its
 member's name; your own view, if any, after. A question of your own (not the user's words) goes with `--as moderator`,

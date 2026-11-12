@@ -7,8 +7,8 @@ Every script's `--help` under Python 3.13; `python3 tools/cli_docs.py` rewrites 
 ```text
 usage: ask.py [-h] [--role ROLE] [--tokens TOKENS] [--force] [--continue] [--thread THREAD]
               [--effort {low,medium,high,xhigh,max,ultra}] [--agy ID | --ollama ID | --server NAME |
-              --codex ID] [--file FILE] [--think] [--reasoning {file,live,show}] [--handoff [HANDOFF] |
-              --handoff-back ID MODE | --reasoning-read [REASONING_READ] |
+              --codex ID | --claude ID] [--file FILE] [--think] [--reasoning {file,live,show}]
+              [--handoff [HANDOFF] | --handoff-back ID MODE | --reasoning-read [REASONING_READ] |
               --reasoning-open [REASONING_OPEN]] [--deadline DEADLINE] [--ask {never,human}]
               [--ask-timeout ASK_TIMEOUT] [--max-tokens MAX_TOKENS] [--answer VALUE [VALUE ...]] [--wait]
               [--max-wait MAX_WAIT] [--keep KEEP] [--unload] [--preset [PRESET]] [--status]
@@ -35,6 +35,7 @@ options:
   --ollama ID           explicit Ollama model id
   --server NAME         configured local OpenAI-compatible server
   --codex ID            explicit Codex model id
+  --claude ID           explicit Claude model id (claude -p on the subscription)
   --file FILE           a file appended after the question (repeatable)
   --think               qwen3: think first (slower)
   --reasoning {file,live,show}
