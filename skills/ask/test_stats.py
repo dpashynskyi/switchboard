@@ -23,7 +23,7 @@ import dashboard
 import route
 import stats_push
 import stats_server
-from stats_store import MAX_BODY, StatsStore, atomic_json, claude_accounts
+from stats_store import MAX_BODY, StatsStore, atomic_json, claude_accounts, account_check, account_clusters
 
 READ = "r" * 24
 WRITE = "w" * 24
@@ -54,11 +54,31 @@ class ClaudeAccountTests(unittest.TestCase):
 
     def test_reset_threshold_and_plan(self):
         first = self.snapshot()
-        for reset, expected in (("2026-11-06T13:00:00Z", 1), ("2026-11-06T13:00:01Z", 2)):
+        for reset, expected in (("2026-11-06T12:10:00Z", 1), ("2026-11-06T12:10:01Z", 2)):
             with self.subTest(reset=reset):
                 self.assertEqual(len(claude_accounts([("pc", first), ("mac", self.snapshot(reset=reset))], self.now)), expected)
         other = dict(first, plan="Pro")
         self.assertEqual(len(claude_accounts([("pc", first), ("mac", other)], self.now)), 2)
+
+    def test_unused_and_contradictory_windows(self):
+        first, second = self.snapshot(), self.snapshot()
+        for snapshot in (first, second):
+            for win in snapshot["windows"]:
+                win["percentUsed"] = 0
+        self.assertEqual(len(claude_accounts([("pc", first), ("mac", second)], self.now)), 2)
+        first["windows"][0]["percentUsed"] = 1
+        second["windows"][1]["resetsAt"] = "2026-11-06T13:00:00Z"
+        self.assertEqual(len(claude_accounts([("pc", first), ("mac", second)], self.now)), 1)
+        second["windows"][1]["percentUsed"] = 1
+        self.assertEqual(len(claude_accounts([("pc", first), ("mac", second)], self.now)), 2)
+
+    def test_transitive_resets_and_missing_resets(self):
+        entries = [("c", self.snapshot(reset="2026-11-06T12:20:00Z")),
+                   ("a", self.snapshot()), ("b", self.snapshot(reset="2026-11-06T12:10:00Z"))]
+        account, = claude_accounts(entries, self.now)
+        self.assertEqual(account["machines"], ["a", "b", "c"])
+        missing = self.snapshot(reset=None)
+        self.assertEqual(len(claude_accounts([("a", self.snapshot()), ("b", missing)], self.now)), 2)
 
     def test_window_order_age_and_latest_extra(self):
         old = self.snapshot("2026-11-05T04:00:00Z")
@@ -88,6 +108,121 @@ class ClaudeAccountTests(unittest.TestCase):
             self.assertNotIn("extra_usage", one["claude"][0])
             self.assertEqual(both["cloud"]["pools"], [])
             self.assertTrue(all(not m["pools"] for m in both["machines"]))
+
+
+class SharedAccountTests(unittest.TestCase):
+    now = 1793880000
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.addCleanup(self.tmp.cleanup)
+        self.store = StatsStore(self.tmp.name)
+
+    def codex(self, fetched=None, reset=None, used=30, plan="plus"):
+        return {"fetched_at": self.now - 60 if fetched is None else fetched,
+                "result": {"rateLimits": {"planType": plan, "secondary": {
+                    "windowDurationMins": 10080, "usedPercent": used,
+                    "resetsAt": self.now + 86400 if reset is None else reset}}}}
+
+    def agy(self, short_reset="2026-11-05T16:00:00Z", short_remaining=1):
+        return {"fetched_at": self.now - 120, "groups": [{"name": label, "buckets": [
+            {"window": "weekly", "remaining_fraction": .6, "reset_time": "2026-11-06T12:00:00Z"},
+            {"window": "5h", "remaining_fraction": short_remaining, "reset_time": short_reset}]}
+            for label in ("Gemini Models", "Claude and GPT models")]}
+
+    def gather(self):
+        with mock.patch.object(route, "load_roles", return_value={}):
+            return self.store.gather(now=self.now)
+
+    def put(self, machine, **snapshots):
+        self.store.ingest({"machine": machine, "snapshots": snapshots})
+
+    def test_codex_newest_and_removed(self):
+        self.put("pc", codex_usage=self.codex(fetched=self.now - 60, used=35))
+        self.put("mac", codex_usage=self.codex(fetched=self.now - 300))
+        state = self.gather()
+        account, = state["accounts"]
+        self.assertEqual((account["provider"], account["label"], account["checked"]),
+                         ("codex", "ChatGPT (plus)", "resets match"))
+        self.assertEqual(account["machines"], ["mac", "pc"])
+        win, = account["windows"]
+        self.assertEqual((win["machine"], win["age_s"]), ("pc", 60))
+        self.assertAlmostEqual(win["remaining_fraction"], .65)
+        self.assertAlmostEqual(win["used_percent"], 35)
+        self.assertEqual(state["cloud"]["pools"], [])
+        self.assertTrue(all(not m["pools"] for m in state["machines"]))
+
+    def test_agy_unused_reset_ignored_but_used_reset_conflicts(self):
+        self.put("pc", agy_usage=self.agy())
+        self.put("mac", agy_usage=self.agy("2026-11-05T16:02:00Z"))
+        self.assertEqual(len(self.gather()["accounts"]), 2)
+        # A window used on only one side is still comparable and can contradict the week.
+        self.put("mac", agy_usage=self.agy("2026-11-05T16:20:00Z", .9))
+        state = self.gather()
+        self.assertEqual(state["accounts"], [])
+        self.assertEqual(len(state["cloud"]["pools"]), 4)
+
+    def test_no_used_window_stays_with_note(self):
+        for machine in ("pc", "mac"):
+            self.put(machine, codex_usage=self.codex(used=0))
+        state = self.gather()
+        self.assertEqual(state["accounts"], [])
+        self.assertEqual(len(state["cloud"]["pools"]), 2)
+        for machine in state["machines"]:
+            self.assertEqual(machine["pools"][0]["account_note"],
+                             "account not checked: no used window to compare")
+
+    def test_two_match_third_separate_and_selection(self):
+        for machine, offset in (("a", 0), ("b", 0), ("c", 1200)):
+            self.put(machine, codex_usage=self.codex(reset=self.now + 86400 + offset))
+        state = self.gather()
+        self.assertEqual(state["accounts"][0]["machines"], ["a", "b"])
+        self.assertEqual([p["machine"] for p in state["cloud"]["pools"]], ["c"])
+        with mock.patch.object(route, "load_roles", return_value={}):
+            selected = self.store.gather("a", now=self.now)
+        self.assertEqual(selected["accounts"], [])
+        self.assertEqual(selected["cloud"]["pools"][0]["machine"], "a")
+
+    def test_reservations_summed_and_clamped(self):
+        for machine, share in (("pc", .2), ("mac", .3)):
+            self.put(machine, codex_usage=self.codex(), reservations=[{
+                "provider": "codex", "pool": "ChatGPT (plus)", "share": {"weekly": share}}])
+        win = self.gather()["accounts"][0]["windows"][0]
+        self.assertAlmostEqual(win["reserved_fraction"], .5)
+        self.assertAlmostEqual(win["available_fraction"], .2)
+        self.assertEqual({r["machine"] for r in win["reservations"]}, {"pc", "mac"})
+        self.put("mac", reservations=[{"provider": "codex", "pool": "ChatGPT (plus)", "share": {"weekly": .9}}])
+        self.assertEqual(self.gather()["accounts"][0]["windows"][0]["available_fraction"], 0)
+
+    def test_accounts_order_and_page(self):
+        for machine in ("pc", "mac"):
+            self.put(machine, codex_usage=self.codex(), agy_usage=self.agy(),
+                     claude_usage=ClaudeAccountTests().snapshot())
+        state = self.gather()
+        self.assertEqual(state["accounts"][:1], state["claude"])
+        self.assertEqual([a["provider"] for a in state["accounts"][1:]], ["agy", "agy", "codex"])
+        page = dashboard.page_html(server_mode=True)
+        for text in ("'Accounts'", "same account (resets match)", "pool.account_note", "'Data: '"):
+            self.assertIn(text, page)
+        self.assertNotIn("innerHTML", page)
+
+    def test_pure_check_and_transitive_deterministic_clusters(self):
+        def pool(reset, remaining=.5, label="ChatGPT (plus)", provider="codex", window="weekly"):
+            return {"provider": provider, "label": label, "windows": [
+                {"label": window, "remaining_fraction": remaining, "reset_time": reset}]}
+        a, b, c = pool(1000), pool(1600), pool(2200)
+        self.assertEqual(account_check(a, b), "resets match")
+        self.assertEqual(account_check(a, c), "resets differ or missing")
+        self.assertEqual(account_check(a, pool(None)), "resets differ or missing")
+        self.assertEqual(account_check(pool(1000, 1), pool(9000, 1)), "no used window to compare")
+        self.assertEqual(account_check(a, pool(1000, window="5h")), "no used window to compare")
+        self.assertNotEqual(account_check(a, pool(1000, label="ChatGPT (pro)")), "resets match")
+        self.assertNotEqual(account_check(a, pool(1000, provider="agy")), "resets match")
+        entries = [("c", c), ("a", a), ("b", b)]
+        before = json.dumps(entries, sort_keys=True)
+        self.assertEqual([[m for m, _ in g] for g in account_clusters(entries)], [["a", "b", "c"]])
+        self.assertEqual(account_clusters(entries), account_clusters(list(reversed(entries))))
+        self.assertEqual(json.dumps(entries, sort_keys=True), before)
 
 
 class ServerTests(unittest.TestCase):

@@ -62,12 +62,91 @@ def rows_from(path):
         return
 
 
-def claude_accounts(snapshots, now):
-    """Merge (machine, snapshot) pairs by plan and weekly reset, then by window age.
+def timestamp(value):
+    parsed = route._parse_iso_utc(value) if isinstance(value, str) else None
+    try:
+        result = parsed.timestamp() if parsed else float(value)
+        return result if math.isfinite(result) else float("-inf")
+    except (ValueError, TypeError, OverflowError):
+        return float("-inf")
 
-    Reset clusters span at most one hour; missing resets join the first cluster.
-    Sorting makes ambiguous/missing-reset assignment deterministic.
-    """
+
+def account_check(left, right):
+    """Pure identity check on normalized pools; unused windows provide no evidence."""
+    if (left["provider"], left["label"]) != (right["provider"], right["label"]):
+        return "different provider or label"
+    comparable = False
+    for a in left["windows"]:
+        for b in right["windows"]:
+            if a.get("label") != b.get("label"):
+                continue
+            if not (a.get("remaining_fraction", 1) < 1 or b.get("remaining_fraction", 1) < 1):
+                continue
+            comparable = True
+            ta, tb = timestamp(a.get("reset_time")), timestamp(b.get("reset_time"))
+            if not (math.isfinite(ta) and math.isfinite(tb)) or abs(ta - tb) > 600:
+                return "resets differ or missing"
+    return "resets match" if comparable else "no used window to compare"
+
+
+def account_clusters(entries):
+    """Connected components, including singleton pools, ordered by machine name."""
+    groups = []
+    for entry in sorted(entries, key=lambda e: e[0]):
+        matches = [g for g in groups if any(account_check(entry[1], old[1]) == "resets match" for old in g)]
+        merged = [entry]
+        for group in matches:
+            merged.extend(group)
+            groups.remove(group)
+        groups.append(sorted(merged, key=lambda e: e[0]))
+    return sorted(groups, key=lambda g: g[0][0])
+
+
+def pool_accounts(machines, rules):
+    from dashboard import window_status
+    entries = [(view["machine"], pool) for view in machines for pool in view["pools"]
+               if pool["provider"] in ("agy", "codex")]
+    accounts, removed = [], set()
+    for members in account_clusters(entries):
+        if len(members) == 1:
+            pool = members[0][1]
+            candidates = [other for _, other in entries if other is not pool and
+                          (other["provider"], other["label"]) == (pool["provider"], pool["label"])]
+            if all(account_check(pool, other) == "no used window to compare"
+                   for other in candidates or [pool]):
+                pool["account_note"] = "account not checked: no used window to compare"
+            continue
+        picked = {}
+        for machine, pool in members:
+            removed.add(id(pool))
+            for window in pool["windows"]:
+                key = window["label"]
+                if key not in picked or pool["snapshot_at"] > picked[key][0]:
+                    picked[key] = (pool["snapshot_at"], dict(window, machine=machine, age_s=pool["age_s"]))
+        reservations = [dict(item, machine=machine) for machine, pool in members for item in pool["reservations"]]
+        windows = []
+        for _, window in picked.values():
+            window["reservations"] = reservations
+            # These fractions have already been applied to each machine's own pools.
+            window["reserved_fraction"] = round(sum(w["reserved_fraction"] for _, pool in members
+                                                    for w in pool["windows"] if w["label"] == window["label"]), 6)
+            window["available_fraction"] = max(0, window["remaining_fraction"] - window["reserved_fraction"])
+            window["used_percent"] = round((1 - window["remaining_fraction"]) * 100, 1)
+            window["status"] = window_status(window, rules)
+            windows.append(window)
+        pool = members[0][1]
+        accounts.append({"provider": pool["provider"], "label": pool["label"],
+                         "machines": sorted({machine for machine, _ in members}),
+                         "checked": "resets match", "windows": windows})
+    for view in machines:
+        view["pools"] = [pool for pool in view["pools"] if id(pool) not in removed]
+        for pool in view["pools"]:
+            pool.pop("snapshot_at", None)
+    return sorted(accounts, key=lambda a: (0 if a["provider"] == "agy" else 1, a["machines"], a["label"]))
+
+
+def claude_accounts(snapshots, now):
+    """Merge proven accounts, retaining the newest reading for each Claude window."""
     def stamp(value):
         parsed = route._parse_iso_utc(value) if isinstance(value, str) else None
         return parsed.timestamp() if parsed else float("-inf")
@@ -81,20 +160,22 @@ def claude_accounts(snapshots, now):
         windows = data.get("windows")
         if not isinstance(windows, list) or not windows:
             continue
-        reset = next((stamp(w.get("resetsAt")) for w in windows
-                      if isinstance(w, dict) and weekly_all(w)), float("-inf"))
-        entries.append((str(data.get("plan") or "subscription"), reset, machine, data))
-    groups = []
-    for plan, reset, machine, data in sorted(entries, key=lambda e: (e[0], -e[1], e[2])):
-        group = next((g for g in groups if g[0] == plan and
-                      (not math.isfinite(reset) or abs(g[1] - reset) <= 3600)), None)
-        if group is None:
-            group = (plan, reset, [])
-            groups.append(group)
-        group[2].append((machine, data))
+        plan = str(data.get("plan") or "subscription")
+        normalized = {"provider": "claude-subscription", "label": "Claude (" + plan + ")", "windows": []}
+        for w in windows:
+            if not isinstance(w, dict) or not isinstance(w.get("label"), str):
+                continue
+            used = w.get("percentUsed")
+            if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used):
+                continue
+            normalized["windows"].append({"label": w["label"], "remaining_fraction": 1 - used / 100,
+                                           "reset_time": w.get("resetsAt")})
+        entries.append((machine, normalized, data, plan))
 
     accounts = []
-    for plan, _, members in groups:
+    for group in account_clusters(entries):
+        plan = group[0][3]
+        members = [(entry[0], entry[2]) for entry in group]
         picked, extras = {}, []
         for machine, data in members:
             if isinstance(data.get("extra_usage"), dict):
@@ -206,7 +287,7 @@ class StatsStore:
         now = time.time() if now is None else now
         rules = route.load_roles()
         names = sorted(p.name for p in self.root.iterdir() if p.is_dir() and MACHINE.fullmatch(p.name)) if self.root.exists() else []
-        machines, rows, pools, claude = [], [], [], []
+        machines, rows, claude = [], [], []
         for name in names:
             if selected not in ("all", name):
                 continue
@@ -238,7 +319,12 @@ class StatsStore:
                 ("claude_usage", lambda data: route._pools_from_claude_usage(data, now)[0]),
             ):
                 try:
-                    view["pools"].extend(convert(snapshots.get(key, {})))
+                    converted = convert(snapshots.get(key, {}))
+                    fetched = timestamp(snapshots.get(key, {}).get("fetched_at"))
+                    for pool in converted:
+                        pool["snapshot_at"] = fetched
+                        pool["age_s"] = max(0, now - fetched) if math.isfinite(fetched) else None
+                    view["pools"].extend(converted)
                 except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
                     view["errors"].append("Invalid " + key + " snapshot")
             claude.append((name, snapshots.get("claude_usage", {})))
@@ -257,10 +343,12 @@ class StatsStore:
                 rows.extend(dict(row, machine=name) for row in rows_from(folder / "usage.jsonl"))
             except OSError:
                 view["errors"].append("Unreadable journal")
-            pools.extend(view["pools"])
             machines.append(view)
+        accounts = pool_accounts(machines, rules)
+        pools = [pool for view in machines for pool in view["pools"]]
+        claude = claude_accounts(claude, now)
         chart, recent = journal_views(rows, now)
         return {"server_mode": True, "machine": selected, "machine_names": names, "machines": machines,
                 "generated_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
-                "claude": claude_accounts(claude, now),
+                "claude": claude, "accounts": claude + accounts,
                 "cloud": {"ok": True, "pools": pools}, "chart": chart, "journal": recent}

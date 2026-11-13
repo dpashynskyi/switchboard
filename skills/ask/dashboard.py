@@ -309,17 +309,23 @@ function meter(value, label) {
 function poolCard(pool, win) {
   const card = el('article', null, 'card ' + win.status);
   const heading = el('div', null, 'heading');
-  const title = el('div'); title.append(el('h3', pool.label || pool.id), el('div', win.label || win.window, 'muted details'));
+  const title = el('div'); title.append(el('h3', pool.label || pool.id));
+  if (pool.checked) title.append(el('div', pool.machines.join(', ') + ' · same account (resets match)', 'muted details'));
+  title.append(el('div', win.label || win.window, 'muted details'));
   heading.append(title, badge(win.status)); card.append(heading);
   card.append(el('div', win.remaining_percent, 'big'), meter(win.remaining_fraction, 'Quota remaining'));
   card.append(el('p', 'Resets in ' + (win.resets_in || '?'), 'details'));
   card.append(el('p', win.pace_str || '?', 'details'));
   card.append(el('p', 'Covers: ' + ((win.covers && win.covers.length ? win.covers : pool.covers) || []).join(', '), 'muted details'));
   if (pool.stale) card.append(el('p', 'Stale reading', 'muted details'));
+  if (pool.account_note) card.append(el('p', pool.account_note, 'muted details'));
+  if (pool.checked) card.append(el('p', num(win.used_percent) + ' % used', 'details'),
+    el('p', 'Data: ' + (win.age_s == null ? 'unknown age' : Math.floor(win.age_s / 60) + ' min old') + ' · ' + win.machine, 'muted details'));
   const reservations = el('div', null, 'reservations details');
-  const live = pool.reservations || [];
+  const live = win.reservations || pool.reservations || [];
   if (!live.length) reservations.append(el('span', 'No live reservations', 'muted'));
   for (const item of live) {
+    if (item.machine) reservations.append(el('span', item.machine, 'muted'));
     const shares = Object.entries(item.share || {}).map(([key, val]) => key + ' ' + (Number(val) * 100).toFixed(1) + '%').join(', ');
     reservations.append(el('p', (item.script || 'direct') + ' · ' + (item.model || '?') + ' · ~' + num(item.tokens) + ' tokens · ' + (shares || 'share unknown')));
   }
@@ -413,6 +419,11 @@ function render(state) {
       button.addEventListener('click', () => { selectedMachine = name; refreshStats(); }); selector.append(button);
     }
     for (const account of state.claude || []) $('pools').append(claudePanel(account));
+    const accounts = (state.accounts || []).filter(account => account.checked);
+    if (accounts.length) {
+      const heading = el('h2', 'Accounts'); heading.style.gridColumn = '1 / -1'; $('pools').append(heading);
+      for (const account of accounts) for (const win of account.windows) $('pools').append(poolCard(account, win));
+    }
     for (const machine of state.machines) {
       const heading = el('div'); heading.style.gridColumn = '1 / -1';
       heading.append(el('h2', machine.machine), el('p', 'last push ' + Math.floor(machine.age_s / 60) + ' min ago' + (machine.stale ? ' · stale: no push' : ''), 'muted'));
