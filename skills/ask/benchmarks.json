@@ -5,8 +5,8 @@
       "url": "https://benchlm.ai/coding",
       "what": "weighted coding composite (BenchAlign v5.8: SWE-bench Pro 26%, DeepSWE 15%, CursorBench 10%, SciCode 10%, ...), 0-100",
       "category": "code",
-      "top": 82.9,
-      "read_at": "2026-11-05"
+      "top": 89.8,
+      "read_at": "2026-11-13"
     },
     "llmstats-coding": {
       "url": "https://llm-stats.com/leaderboards/best-ai-for-coding",
@@ -60,32 +60,35 @@
   },
   "models": {
     "claude-opus-5-5": {
-      "benchlm-coding": 82.9,
+      "benchlm-coding": 82.7,
       "llmstats-coding": 51.0
     },
     "claude-sonnet-5-5": {
-      "benchlm-coding": 81.7,
+      "benchlm-coding": 81.0,
       "llmstats-coding": 48.7
     },
     "claude-fable-5-2": {
-      "benchlm-coding": 86.3
+      "benchlm-coding": 89.8
     },
     "claude-fable-5-1": {
-      "benchlm-coding": 76.4
+      "benchlm-coding": 74.0
     },
     "gpt-6-astra": {
-      "benchlm-coding": 74.7,
+      "benchlm-coding": 78.7,
       "llmstats-coding": 46.7
     },
     "gemini-4-carbon": {
-      "benchlm-coding": 80.5
+      "benchlm-coding": 84.0
+    },
+    "gemini-4-hydrogen": {
+      "benchlm-coding": 75.9
     },
     "gemini-4-argon": {
-      "benchlm-coding": 72.2,
+      "benchlm-coding": 71.9,
       "llmstats-coding": 43.4
     },
     "gpt-6.1-sol": {
-      "benchlm-coding": 70.3,
+      "benchlm-coding": 73.4,
       "llmstats-coding": 39.6
     },
     "gpt-6.1-terra": {
