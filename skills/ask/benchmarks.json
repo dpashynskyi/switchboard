@@ -519,6 +519,18 @@
       "minutes_per_task": 1.8,
       "output_tokens_per_task": 10059.0
     },
+    "gemini-4-hydrogen-xhigh": {
+      "aa-intelligence": 54
+    },
+    "gemini-4-hydrogen-high": {
+      "aa-intelligence": 51
+    },
+    "gemini-4-hydrogen-medium": {
+      "aa-intelligence": 41
+    },
+    "gemini-4-hydrogen-low": {
+      "aa-intelligence": 27
+    },
     "gemini-4-carbon-high": {
       "aa-intelligence": 60,
       "minutes_per_task": 26.1
