@@ -114,10 +114,12 @@ class LimitsTests(unittest.TestCase):
         reply = {"plan": "Ultra", "windows": [{"label": "Weekly · all models", "percentUsed": 17}]}
         # A Ukrainian Windows reads a pipe as cp1251: "·" came out as "В·".
         stdin = io.TextIOWrapper(io.BytesIO(json.dumps(reply, ensure_ascii=False).encode("utf-8")), encoding="cp1251")
+        # Its own file, whatever route resolved at import: a test never writes the machine's claude_usage.json.
+        path = os.path.join(tempfile.mkdtemp(prefix="ask-test-claude-"), "claude_usage.json")
         with mock.patch("sys.stdin", stdin), mock.patch.object(limits, "table", return_value=""), \
-                mock.patch("sys.stdout", io.StringIO()):
+                mock.patch("sys.stdout", io.StringIO()), mock.patch.dict(os.environ, {"ASK_CLAUDE_USAGE_PATH": path}):
             self.assertEqual(limits.main(["--claude-json", "-"]), 0)
-        with open(route.CLAUDE_USAGE_PATH, encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             self.assertEqual(json.load(handle)["windows"][0]["label"], "Weekly · all models")
 
 

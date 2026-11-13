@@ -1,4 +1,11 @@
 """Offline stats transport and queue regression tests; no real provider calls."""
+import os as _os
+import tempfile as _tempfile
+# Isolated before route is imported, whichever test module the runner loads first: a machine's own machine.json,
+# caches and claude_usage.json are never read or written by a test.
+_os.environ["ASK_CONFIG_DIR"] = _tempfile.mkdtemp(prefix="ask-test-config-")
+_os.environ["ASK_CACHE_DIR"] = _tempfile.mkdtemp(prefix="ask-test-cache-")
+_os.environ["ASK_CLAUDE_USAGE_PATH"] = _os.path.join(_os.environ["ASK_CACHE_DIR"], "claude_usage.json")
 import base64
 from contextlib import ExitStack
 import hashlib
