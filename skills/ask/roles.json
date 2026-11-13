@@ -28,6 +28,10 @@
           "effort": ">=high"
         },
         {
+          "family": "gemini-4-hydrogen*",
+          "effort": ">=high"
+        },
+        {
           "family": "gemini-3.8-flash*",
           "effort": ">=high"
         }
@@ -49,6 +53,10 @@
       "prefer": [
         {
           "any": [
+            {
+              "family": "gemini-4-hydrogen*",
+              "effort": ">=high"
+            },
             {
               "family": "gemini-3.8-flash*",
               "effort": ">=high"
@@ -87,6 +95,10 @@
           "provider": "ollama"
         },
         {
+          "family": "gemini-4-hydrogen*",
+          "effort": ">=high"
+        },
+        {
           "family": "gemini-3.8-flash*",
           "effort": ">=high"
         }
@@ -112,6 +124,10 @@
         {
           "family": "qwen3*",
           "provider": "ollama"
+        },
+        {
+          "family": "gemini-4-hydrogen*",
+          "effort": "<=low"
         },
         {
           "family": "gemini-3.8-flash*",

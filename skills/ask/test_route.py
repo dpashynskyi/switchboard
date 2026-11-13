@@ -2149,6 +2149,23 @@ class ProviderTests(unittest.TestCase):
             res = route.pick("hard", fake=st)
             self.assertEqual((res["provider"], res["model"]), ("claude-subscription", "claude-fable-5-2"), res["message"])
 
+    def test_flash_roles_take_hydrogen_when_agy_offers_it(self):
+        # Gemini 4 Hydrogen replaces 3.8 Flash, but only on paid Antigravity plans: Flash stays as the fallback.
+        st = self.state()
+        st["agy_models"] = ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high",
+                            "gemini-4-hydrogen-xhigh", "gemini-3.8-flash-low", "gemini-3.8-flash-high"]
+        st["codex_models"] = {"result": {"data": [], "nextCursor": None}}
+        st["ollama_models"] = []  # first-read and draft go local first; here the GPU has nothing pulled
+        with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
+            for role in ("review", "second-opinion", "first-read"):
+                res = route.pick(role, fake=st)
+                self.assertTrue(res["model"].startswith("gemini-4-hydrogen-"), (role, res["message"]))
+            res = route.pick("draft", fake=st)
+            self.assertEqual(res["model"], "gemini-4-hydrogen-low", res["message"])
+            st["agy_models"] = ["gemini-3.8-flash-low", "gemini-3.8-flash-high"]
+            res = route.pick("draft", fake=st)
+            self.assertEqual(res["model"], "gemini-3.8-flash-low", res["message"])
+
     def test_codex_efforts_from_its_live_list(self):
         codex = providers.get("codex", fake=self.state())
         self.assertEqual(codex.efforts("gpt-6.1-sol"), ["high"])
