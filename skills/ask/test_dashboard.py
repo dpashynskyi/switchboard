@@ -99,10 +99,11 @@ class DashboardTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         for name in ("USAGE_CACHE", "CODEX_USAGE_CACHE", "CODEX_MODELS_CACHE", "AGY_MODELS_CACHE",
                      "CLAUDE_USAGE_PATH", "VRAM_CACHE", "LOCAL_LOCK", "RESERVATIONS_PATH",
-                     "RESERVATIONS_LOCK", "CONFIG_PATH", "JOURNAL_PATH"):
+                     "RESERVATIONS_LOCK", "CONFIG_PATH", "MACHINE_PATH", "JOURNAL_PATH"):
             patcher = mock.patch.object(route, name, str(self.root / (name.lower() + ".json")))
             patcher.start()
             self.addCleanup(patcher.stop)
+        Path(route.MACHINE_PATH).write_text("{}", encoding="utf-8")
 
     def write_rows(self, rows):
         with self.journal.open("w", encoding="utf-8") as stream:

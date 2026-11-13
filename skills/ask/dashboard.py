@@ -6,6 +6,7 @@ import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
+import os
 from pathlib import Path
 import secrets
 import sys
@@ -74,7 +75,7 @@ def journal_series(row):
     return "other"
 
 
-RECENT_KEYS = ("time", "ts", "script", "role", "name", "model", "provider", "pool", "status", "tokens", "seconds",
+RECENT_KEYS = ("machine", "time", "ts", "script", "role", "name", "model", "provider", "pool", "status", "tokens", "seconds",
                "type", "event", "verdict", "why", "crossed", "context")
 
 
@@ -384,19 +385,36 @@ function render(state) {
   if (cloud.codex_error) notes.push('Codex usage: ' + cloud.codex_error);
   $('notice').textContent = notes.join(' · ');
   $('pools').replaceChildren();
-  for (const pool of cloud.pools || []) for (const win of pool.windows || []) $('pools').append(poolCard(pool, win));
+  if (state.server_mode) {
+    const selector = $('machines'); selector.replaceChildren();
+    for (const name of ['all', ...state.machine_names]) {
+      const button = el('button', name); button.type = 'button';
+      button.setAttribute('aria-pressed', String(name === selectedMachine));
+      button.addEventListener('click', () => { selectedMachine = name; refreshStats(); }); selector.append(button);
+    }
+    for (const machine of state.machines) {
+      const heading = el('div'); heading.style.gridColumn = '1 / -1';
+      heading.append(el('h2', machine.machine), el('p', 'last push ' + Math.floor(machine.age_s / 60) + ' min ago' + (machine.stale ? ' · stale: no push' : ''), 'muted'));
+      for (const [name, age] of Object.entries(machine.snapshot_ages)) heading.append(el('p', name + ': ' + Math.floor(age / 60) + ' min old', 'muted details'));
+      for (const error of machine.errors) heading.append(el('p', error, 'muted'));
+      $('pools').append(heading);
+      for (const pool of machine.pools) for (const win of pool.windows || []) $('pools').append(poolCard(pool, win));
+    }
+  } else for (const pool of cloud.pools || []) for (const win of pool.windows || []) $('pools').append(poolCard(pool, win));
   if (!$('pools').childElementCount) $('pools').append(el('p', 'No quota windows available.', 'muted'));
-  renderGPU(state); renderChart(state.chart);
+  if (!state.server_mode) renderGPU(state); renderChart(state.chart);
   const body = $('journal'); body.replaceChildren();
   for (const item of state.journal) {
     const row = el('tr');
     const values = [item.time || (item.ts ? new Date(item.ts * 1000).toISOString() : '—'), item.script, item.role, item.model || item.name, item.provider, num(item.total_tokens), item.seconds, item.status];
+    if (state.server_mode) row.append(el('td', item.machine));
     values.forEach((value, index) => row.append(el('td', value === undefined || value === null ? '—' : (typeof value === 'object' ? JSON.stringify(value) : value), index === 5 || index === 6 ? 'number' : '')));
     body.append(row);
   }
   if (!state.journal.length) { const row = el('tr'), cell = el('td', 'No journal entries.'); cell.colSpan = 8; row.append(cell); body.append(row); }
 }
 const snapshot = JSON.parse($('snapshot').textContent);
+let selectedMachine = 'all', refreshStats = () => {};
 /* The token rides in the address's fragment, which never reaches the server; the link to the presets page carries it on. */
 if (snapshot !== null) { $('mode').textContent = ' · snapshot (automatic refresh disabled)'; render(snapshot); }
 else {
@@ -412,6 +430,7 @@ else {
     } catch (error) { $('error').textContent = 'Refresh failed: ' + error.message + '. Retrying in 60 s.'; }
     finally { loading = false; }
   }
+  refreshStats = () => { lastAttempt = 0; refresh(); };
   refresh(); setInterval(refresh, 60000); document.addEventListener('visibilitychange', refresh);
 }
 </script>
@@ -419,10 +438,19 @@ else {
 '''
 
 
-def page_html(state=None):
+def page_html(state=None, server_mode=False):
     # Escaping '<' prevents journal text from closing the JSON script element.
     data = json.dumps(finite(state), ensure_ascii=True, allow_nan=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    return PAGE.replace("__STYLE__", STYLE).replace("__SNAPSHOT__", data)
+    page = PAGE.replace("__STYLE__", STYLE).replace("__SNAPSHOT__", data)
+    if server_mode:
+        page = page.replace("Local limits", "Switchboard stats")
+        page = page.replace('<section id="pools"', '<div id="machines"></div><section id="pools"')
+        page = page.replace('<th>Time</th>', '<th>Machine</th><th>Time</th>')
+        page = page.replace('<section class="panel" id="gpu"', '<section hidden class="panel" id="gpu"')
+        page = page.replace("$('nav').hidden = false;", "$('nav').hidden = true;")
+        page = page.replace("fetch('/api/state',", "fetch('/api/state?machine=' + encodeURIComponent(selectedMachine),")
+        page = page.replace("60000", "30000").replace("60 s", "30 s")
+    return page
 
 
 PRESETS_PAGE = r'''<!doctype html>
@@ -844,11 +872,29 @@ def make_server(port=8765, store=None, editor=None, token=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--serve", action="store_true", help="serve shared, file-only stats (private network or tunnel only)")
+    parser.add_argument("--data", default=os.environ.get("SWITCHBOARD_DASH_DATA"), help="shared stats directory")
+    parser.add_argument("--host", default="127.0.0.1", help="shared server bind address")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--once", metavar="FILE", help="write an inlined snapshot and exit")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("port must be between 0 and 65535")
+    if args.serve:
+        from stats_server import make_server as make_stats_server
+        if not args.data or args.once:
+            parser.error("--serve requires --data (or SWITCHBOARD_DASH_DATA), and cannot use --once")
+        try:
+            server = make_stats_server(args.data, os.environ.get("SWITCHBOARD_DASH_TOKEN"),
+                                       os.environ.get("SWITCHBOARD_INGEST_TOKEN") or None, args.host, args.port)
+        except ValueError as error:
+            parser.error(str(error))
+        with server:
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+        return 0
     if args.once:
         Path(args.once).write_text(page_html(gather_state()), encoding="utf-8")
         return 0

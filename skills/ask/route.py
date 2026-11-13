@@ -1804,6 +1804,7 @@ def cloud_state(fake=None, agy_path=None, force_refresh=False, ttl=60, now=None,
     sub_pools, sub_meta = load_claude_usage(claude_usage_path, now=now_ts)
     pools.extend(sub_pools)
     record_pool_history(pools, now_ts, rules=rules)
+    notify_stats(throttle_s=60)
     pool_history = read_pool_history() or None
     res_list = read_reservations(reservations_path=reservations_path)
     _apply_reservations_to_pools(pools, res_list)
@@ -3947,6 +3948,33 @@ def _record_conversation_usage(conv_id, raw_tokens, carried_on=False, conversati
     return run_tokens, None, (cid if carried_on and cid else None)
 
 
+_stats_machine = None
+
+
+def notify_stats(throttle_s=0):
+    """Fire and forget, with no provider/config access in fake or isolated test mode. throttle_s: skip when the push
+    state was written that recently (a quota read alone changes only the snapshots, which are sent once a minute)."""
+    global _stats_machine
+    try:
+        if resolve_fake() is not None or os.environ.get("ASK_CACHE_DIR"):
+            return
+        if throttle_s and time.time() - os.path.getmtime(os.path.join(CACHE_DIR, "stats_push.json")) < throttle_s:
+            return
+        if _stats_machine is None:
+            _stats_machine = load_machine()
+        if "stats" not in _stats_machine:
+            return
+        options = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+                   "stderr": subprocess.DEVNULL, "close_fds": True}
+        if os.name == "nt":
+            options["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+        else:
+            options["start_new_session"] = True
+        subprocess.Popen([sys.executable, "-B", os.path.join(os.path.dirname(__file__), "stats_push.py"), "--quiet"], **options)
+    except Exception:
+        pass
+
+
 def journal(script, role, name, provider, model, tokens=None, seconds=0.0, status="ok", log=None,
             pool=None, before=None, after=None, conversation=None, conversation_tokens=None, journal_path=None,
             context=None, account=None, crossed=None, why=None, rules=None, score_pick=None, score_notes=None, score_table=None, preset="manual", preset_picks=None, comments=None):
@@ -4010,6 +4038,7 @@ def journal(script, role, name, provider, model, tokens=None, seconds=0.0, statu
         entry["why"] = why  # "expires_first": its quota burns first among targets equally fit
     with open(p, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    notify_stats()
     return entry
 
 
@@ -4020,6 +4049,7 @@ def journal_event(kind, journal_path=None, **fields):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    notify_stats()
     return entry
 
 
@@ -4049,6 +4079,7 @@ def writer_verdict(conversation, verdict, note, model=None, provider=None, journ
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    notify_stats()
     return entry
 
 

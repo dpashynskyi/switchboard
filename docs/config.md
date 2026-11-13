@@ -7,10 +7,12 @@ does not name.
 
 ## `~/.config/ask/machine.json`: this machine
 
-`ask.py --init` writes the first one. Nothing in it leaves the machine.
+`ask.py --init` writes the first one. With `stats` set, journal rows without `log` and the five quota snapshots
+are sent to the configured URL. Other machine settings stay local.
 
 | Key | What it does | Default |
 |---|---|---|
+| `stats` | Shared stats push: `{"url": "http://127.0.0.1:8765", "token_file": "~/stats-token", "machine": "pc"}`. `url` is the server base URL; `token_file` holds the ingest token (never put it in machine.json); `machine` is a lowercase name matching `[a-z0-9][a-z0-9_-]{0,31}`, defaulting to the sanitised short host name. No key means no pushes | off |
 | `preset` | active preset, below `--preset` and `ASK_PRESET`; blank is unset | `manual` |
 | `paths` | where each tool is: `{"agy": "/path/agy", "codex": "...", "ollama": "http://127.0.0.1:11434"}`. A path (Ollama: its API URL), `"auto"` (look for it), or `null` (not on this machine: its models are never offered) | the old `models.json`'s path if it has one, else `auto` |
 | `context_paths` | a folder's context: `{"~/work": "work", "~": "personal"}`; the deepest folder holding the current one wins | none |
@@ -82,6 +84,9 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `ASK_CLAUDE_USAGE_PATH` | another file for the Claude subscription's limits, which `/limits` and the status line write and the router reads (default `~/.cache/ask/claude_usage.json`) |
 | `ASK_CONFIG_DIR` | another folder for `machine.json`, the old `models.json` and your `roles.json` (default `~/.config/ask`) |
 | `ASK_CACHE_DIR` | another folder for the journal, logs and caches (default `~/.cache/ask`) |
+| `SWITCHBOARD_DASH_TOKEN` | shared dashboard read token, required for `dashboard.py --serve`; at least 16 characters |
+| `SWITCHBOARD_INGEST_TOKEN` | separate write token for `/ingest`, at least 16 characters; unset disables ingest |
+| `SWITCHBOARD_DASH_DATA` | default `--data` directory for the shared dashboard |
 | `ASK_ROOMS_DIR` | another folder for superchat rooms (`tools/room.py`; default `rooms` in `ASK_CACHE_DIR`, beside the journal) |
 | `ASK_CLAUDE_CMD` | the `claude` CLI that `ask.py --claude` runs (default `claude` on PATH; tests use a fake) |
 | `ROOM_ASK_CMD` | the command a room runs for a member's turn instead of `python ask.py` (tests use a fake) |

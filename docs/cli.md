@@ -175,15 +175,32 @@ options:
 ## dashboard
 
 ```text
-usage: dashboard.py [-h] [--port PORT] [--no-browser] [--once FILE]
+usage: dashboard.py [-h] [--port PORT] [--serve] [--data DATA] [--host HOST] [--no-browser] [--once FILE]
 
 On-demand, loopback-only quota dashboard, and a page that tunes the router's presets (/presets).
 
 options:
   -h, --help    show this help message and exit
   --port PORT
+  --serve       serve shared, file-only stats (private network or tunnel only)
+  --data DATA   shared stats directory
+  --host HOST   shared server bind address
   --no-browser
   --once FILE   write an inlined snapshot and exit
+```
+
+## stats_push
+
+```text
+usage: stats_push.py [-h] [--quiet] [--snapshots-only] [--dry-run]
+
+Push queued journal rows and changed quota snapshots to a private stats server.
+
+options:
+  -h, --help        show this help message and exit
+  --quiet
+  --snapshots-only
+  --dry-run
 ```
 
 ## experience
