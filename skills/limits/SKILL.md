@@ -15,4 +15,5 @@ description: Show the weekly limits of every pool (the Claude subscription, Chat
    Without `get_usage`: `python3 ~/switchboard/skills/ask/limits.py` (Claude from the last file, a line under the table says how old).
 3. Show the table as it is. The State column: `calm` ✅, `fast` ⚠️, `skipped` ⚠️ (the router passes the pool over: its pace is over `pace_skip`), `spent` ❌. Under it one or two lines of conclusion: what burns first and where to put the work; do not retell the table.
 
-Nearby: `skills/ask/statusline_usage.py` updates the "all models" weekly window from the status line at no quota cost; `ask.py --status` shows the same with reservations, the GPU and the journal; `dashboard.py` is a live view in the browser; the limits band keeps these numbers above the prompt.
+The cache preserves get_usage's optional `extra_usage`; the status line refreshes weekly scopes and five-hour usage with per-window read times and `statusline_keys` (names only).
+Nearby: `ask.py --status` shows reservations, the GPU and the journal; `dashboard.py --serve` shows one Claude panel per account with used/left and data age; the limits band keeps these numbers above the prompt.

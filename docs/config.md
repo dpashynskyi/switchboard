@@ -1,5 +1,8 @@
 # Configuration
 
+`claude_usage.json` keeps per-window read times and optional `extra_usage`; the status line writes weekly scopes,
+five-hour usage and `statusline_keys` (names only). Shared stats merges these snapshots per Claude account.
+
 Two files and a handful of environment variables (an older `~/.config/ask/models.json` with tool paths is still read,
 below `paths`). Every key below is optional; what is left out takes the default.
 A test (`skills/ask/test_docs.py`) fails when the code reads a key or a variable this page

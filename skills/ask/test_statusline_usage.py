@@ -69,7 +69,10 @@ class StatuslineUsageTests(unittest.TestCase):
                 self.assertEqual(data, {
                     "read_at": "2026-11-05T12:00:00Z", "plan": "subscription", "source": "statusline",
                     "windows": [{"label": "Weekly · all models", "percentUsed": 89,
-                                 "resetsAt": "2026-11-05T17:00:00Z"}],
+                                 "resetsAt": "2026-11-05T17:00:00Z", "read_at": "2026-11-05T12:00:00Z"},
+                                {"label": "Five-hour · all models", "percentUsed": 40,
+                                 "resetsAt": None, "read_at": "2026-11-05T12:00:00Z"}],
+                    "statusline_keys": ["five_hour", "seven_day"],
                 })
 
     def test_reset_beyond_24_hours_includes_local_weekday(self):
@@ -93,10 +96,10 @@ class StatuslineUsageTests(unittest.TestCase):
                 self.assertEqual(self.run_main(data), "\n")
                 self.assertFalse(os.path.exists(self.path))
 
-    def test_only_five_hour_usage_is_displayed_without_writing(self):
+    def test_only_five_hour_usage_is_displayed_and_written(self):
         self.assertEqual(self.run_main({"rate_limits": {"five_hour": {"used_percentage": 0}}}),
                          "5 год: лишилось 100%\n")
-        self.assertFalse(os.path.exists(self.path))
+        self.assertEqual(self.saved()["windows"][0]["label"], "Five-hour · all models")
 
     def test_missing_or_invalid_reset_still_saves_weekly_percentage(self):
         for reset in (None, "not a date", True, float("inf"), 10**100):
@@ -109,7 +112,7 @@ class StatuslineUsageTests(unittest.TestCase):
         for percent in (None, "40", True, float("nan"), float("inf"), 10**1000):
             with self.subTest(percent=str(percent)):
                 self.assertEqual(self.run_main(self.payload(percent=percent)), "Opus 5.5 · 5 год: лишилось 60%\n")
-                self.assertFalse(os.path.exists(self.path))
+                self.assertEqual([w["label"] for w in self.saved()["windows"]], ["Five-hour · all models"])
 
     def test_future_fable_kept_and_expired_or_unknown_windows_dropped(self):
         fable = {"label": "Weekly · Fable", "percentUsed": 15, "resetsAt": "2026-11-06T17:00:00Z"}
@@ -122,9 +125,9 @@ class StatuslineUsageTests(unittest.TestCase):
         ]})
         self.run_main(self.payload())
         self.assertEqual(self.saved()["plan"], "Ultra")
-        self.assertEqual(self.saved()["windows"][1:], [fable])
+        self.assertEqual(self.saved()["windows"][2:], [dict(fable, source="get_usage")])
         self.run_main(self.payload(), now=NOW + timedelta(days=2))
-        self.assertEqual(len(self.saved()["windows"]), 1)
+        self.assertEqual(len(self.saved()["windows"]), 2)
 
     def test_five_hour_reset_english_words_and_clamped_percent(self):
         data = {"rate_limits": {"seven_day": {"used_percentage": 104},
@@ -194,10 +197,10 @@ class StatuslineUsageTests(unittest.TestCase):
         fable = {"label": "Weekly · Fable", "percentUsed": 95, "resetsAt": "2026-11-12T17:00:00Z"}
         self.seed({"plan": "Ultra", "read_at": (NOW - timedelta(hours=20)).strftime("%Y-%m-%dT%H:%M:%SZ"), "windows": [fable]})
         self.run_main(self.payload())
-        self.assertEqual([w["label"] for w in self.saved()["windows"]], [WEEKLY])  # 20 h old: dropped, not refreshed
+        self.assertEqual([w["label"] for w in self.saved()["windows"]], [WEEKLY, "Five-hour · all models"])  # old scope dropped
         self.seed({"plan": "Ultra", "read_at": (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"), "windows": [fable]})
         self.run_main(self.payload())
-        kept = self.saved()["windows"][1]
+        kept = self.saved()["windows"][2]
         self.assertEqual(kept["read_at"], (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))
         pools, meta = route.load_claude_usage(self.path, now=(NOW + timedelta(hours=5, minutes=30)).timestamp())
         by_id = {p["id"]: p for p in pools}
@@ -210,14 +213,37 @@ class StatuslineUsageTests(unittest.TestCase):
         pools, _ = route.load_claude_usage(self.path, now=NOW.timestamp())
         self.assertEqual([p["stale"] for p in pools], [True, True])
         self.run_main(self.payload())
-        self.assertEqual([w["label"] for w in self.saved()["windows"]], [WEEKLY])  # unreadable or 7 h old: neither is kept
+        self.assertEqual([w["label"] for w in self.saved()["windows"]], [WEEKLY, "Five-hour · all models"])  # neither old scope kept
 
     def test_saved_output_loads_as_router_all_models_pool(self):
         self.run_main(self.payload())
         pools, meta = route.load_claude_usage(self.path, now=NOW.timestamp())
         self.assertEqual(meta["status"], "ok")
-        self.assertEqual([p["id"] for p in pools], ["claude-sub-all-models"])
+        self.assertEqual([p["id"] for p in pools], ["claude-sub-all-models", "claude-sub-all-models"])
         self.assertAlmostEqual(pools[0]["windows"][0]["remaining_fraction"], 0.11)
+
+    def test_scopes_five_hour_keys_and_change_detection(self):
+        data = self.payload()
+        rates = data["rate_limits"]
+        rates["five_hour"]["resets_at"] = RESET.timestamp()
+        rates["seven_day_fable"] = {"used_percentage": 5, "resets_at": RESET.timestamp()}
+        rates["unknown"] = {"private": "not stored"}
+        self.run_main(data)
+        saved = self.saved()
+        self.assertEqual(saved["statusline_keys"], sorted(rates))
+        self.assertNotIn("not stored", json.dumps(saved))
+        weekly, fable, short = saved["windows"]
+        self.assertEqual((fable["label"], fable["percentUsed"]), ("Weekly · Fable", 5))
+        self.assertEqual(short["resetsAt"], "2026-11-05T17:00:00Z")
+        with mock.patch.object(statusline_usage.os, "replace") as replace:
+            self.run_main(data, now=NOW + timedelta(seconds=300))
+        replace.assert_not_called()
+        rates["five_hour"]["used_percentage"] = 41
+        self.run_main(data)
+        self.assertEqual(self.saved()["windows"][2]["percentUsed"], 41)
+        rates["seven_day_fable"]["used_percentage"] = 6
+        self.run_main(data)
+        self.assertEqual(self.saved()["windows"][1]["percentUsed"], 6)
 
     def test_get_usage_writer_sets_source(self):
         limits.write_claude_usage(json.dumps({"plan": "Ultra", "windows": [

@@ -18,5 +18,6 @@ Explicit `ASK_CACHE_DIR` overrides disable automatic spawning; run the client ma
 Journal byte offsets and snapshot hashes live in `stats_push.json` beside the local journal. Incomplete trailing
 lines wait until the next push. Rotation replays the file and the server deduplicates rows. A failed batch stays
 queued; earlier acknowledged batches remain acknowledged. The client refuses redirects and bypasses HTTP proxies.
-The server stores each machine independently below `machines/`, so shared accounts appear on both machines.
+The server stores each machine independently below `machines/`; Claude accounts merge by plan and weekly all-models resets within one hour.
+Each account panel shows raw used/left percentages, reset, pace and per-window age/source/machine; optional extra usage appears below.
 The dashboard groups cards by machine, merges selected journals and charts, and says “no push” after 15 minutes.

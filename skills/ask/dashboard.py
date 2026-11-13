@@ -335,6 +335,26 @@ function renderGPU(state) {
   if (loc.reasons && loc.reasons.length) { const reasons = el('ul'); for (const reason of loc.reasons) reasons.append(el('li', reason)); box.append(reasons); }
   box.append(el('p', 'Ollama ' + (loc.ollama_up ? 'up' : 'down') + ' · loaded: ' + (display.loaded.join(', ') || 'none'), 'details'));
 }
+function claudePanel(account) {
+  const panel = el('section', null, 'panel'); panel.style.gridColumn = '1 / -1';
+  panel.append(el('h2', account.label));
+  const cards = el('div'); cards.style.display = 'grid';
+  cards.style.gridTemplateColumns = 'repeat(auto-fit, minmax(240px, 1fr))'; cards.style.gap = '16px';
+  for (const win of account.windows) {
+    const card = el('article', null, 'card');
+    card.append(el('h3', win.label), el('div', win.used_percent + ' % used', 'big'),
+      meter(win.used_percent / 100, 'Quota used'), el('p', win.left_percent + ' % left'),
+      el('p', 'Resets in ' + (win.resets_in || '?'), 'details'), el('p', win.pace_str || '?', 'details'),
+      el('p', 'Data: ' + (win.age_s == null ? 'unknown age' : Math.floor(win.age_s / 60) + ' min old') +
+        ' · ' + win.source + ' · ' + win.machine, 'muted details'));
+    if (win.stale) card.append(el('p', 'Stale', 'muted details'));
+    cards.append(card);
+  }
+  panel.append(cards);
+  if (account.extra_usage) panel.append(el('p', Object.entries(account.extra_usage).map(([key, value]) =>
+    key + ': ' + (typeof value === 'object' ? JSON.stringify(value) : String(value))).join(' · '), 'details'));
+  return panel;
+}
 function renderChart(chart) {
   const root = $('chart'), legend = $('legend'), tip = $('tooltip');
   root.replaceChildren(); legend.replaceChildren(); tip.hidden = true;
@@ -392,6 +412,7 @@ function render(state) {
       button.setAttribute('aria-pressed', String(name === selectedMachine));
       button.addEventListener('click', () => { selectedMachine = name; refreshStats(); }); selector.append(button);
     }
+    for (const account of state.claude || []) $('pools').append(claudePanel(account));
     for (const machine of state.machines) {
       const heading = el('div'); heading.style.gridColumn = '1 / -1';
       heading.append(el('h2', machine.machine), el('p', 'last push ' + Math.floor(machine.age_s / 60) + ' min ago' + (machine.stale ? ' · stale: no push' : ''), 'muted'));

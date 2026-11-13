@@ -16,10 +16,71 @@ import dashboard
 import route
 import stats_push
 import stats_server
-from stats_store import MAX_BODY, StatsStore, atomic_json
+from stats_store import MAX_BODY, StatsStore, atomic_json, claude_accounts
 
 READ = "r" * 24
 WRITE = "w" * 24
+
+
+class ClaudeAccountTests(unittest.TestCase):
+    now = 1793880000  # 2026-11-05T12:00:00Z
+
+    def snapshot(self, read="2026-11-05T11:00:00Z", reset="2026-11-06T12:00:00Z"):
+        return {"plan": "Ultra", "read_at": read, "source": "get_usage", "windows": [
+            {"label": "Weekly · all models", "percentUsed": 22, "resetsAt": reset},
+            {"label": "Weekly · Fable", "percentUsed": 5, "resetsAt": reset}]}
+
+    def test_merge_by_window_time_and_raw_share(self):
+        pc = self.snapshot("2026-11-05T11:30:00Z")
+        pc["windows"][1].update(read_at="2026-11-05T09:00:00Z", percentUsed=10)
+        mac = self.snapshot()
+        mac["extra_usage"] = {"enabled": True, "spent": 3}
+        account, = claude_accounts([("pc", pc), ("mac", mac)], self.now)
+        self.assertEqual(account["machines"], ["mac", "pc"])
+        self.assertEqual(account["label"], "Claude (Ultra)")
+        all_models, fable = account["windows"]
+        self.assertEqual((all_models["machine"], fable["machine"]), ("pc", "mac"))
+        self.assertEqual((fable["used_percent"], fable["left_percent"]), (5, 95))
+        self.assertEqual(fable["age_s"], 3600)
+        self.assertFalse(fable["stale"])
+        self.assertEqual(account["extra_usage"], mac["extra_usage"])
+
+    def test_reset_threshold_and_plan(self):
+        first = self.snapshot()
+        for reset, expected in (("2026-11-06T13:00:00Z", 1), ("2026-11-06T13:00:01Z", 2)):
+            with self.subTest(reset=reset):
+                self.assertEqual(len(claude_accounts([("pc", first), ("mac", self.snapshot(reset=reset))], self.now)), expected)
+        other = dict(first, plan="Pro")
+        self.assertEqual(len(claude_accounts([("pc", first), ("mac", other)], self.now)), 2)
+
+    def test_window_order_age_and_latest_extra(self):
+        old = self.snapshot("2026-11-05T04:00:00Z")
+        old["extra_usage"] = {"spent": 1}
+        new = self.snapshot()
+        new["extra_usage"] = {"spent": 2}
+        new["windows"] = [
+            {"label": "Other", "percentUsed": 1},
+            {"label": "FIVE-HOUR · all models", "percentUsed": 40},
+            dict(old["windows"][1], read_at=old["read_at"]), new["windows"][0]]
+        account, = claude_accounts([("old", old), ("new", new)], self.now)
+        self.assertEqual([w["window"] for w in account["windows"]], ["weekly", "weekly", "5h", "Other"])
+        self.assertTrue(account["windows"][1]["stale"])
+        self.assertEqual(account["extra_usage"], {"spent": 2})
+        self.assertEqual(route._window_length_s("FIVE-HOUR"), 18000)
+
+    def test_gather_filters_and_removes_duplicate_pools(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            store = StatsStore(tmp)
+            for machine in ("pc", "mac"):
+                store.ingest({"machine": machine, "snapshots": {"claude_usage": self.snapshot()}})
+            with mock.patch.object(route, "load_roles", return_value={}):
+                both = store.gather(now=self.now)
+                one = store.gather("pc", now=self.now)
+            self.assertEqual(len(both["claude"]), 1)
+            self.assertEqual(one["claude"][0]["machines"], ["pc"])
+            self.assertNotIn("extra_usage", one["claude"][0])
+            self.assertEqual(both["cloud"]["pools"], [])
+            self.assertTrue(all(not m["pools"] for m in both["machines"]))
 
 
 class ServerTests(unittest.TestCase):
@@ -138,7 +199,7 @@ class ServerTests(unittest.TestCase):
                 self.store.ingest({"machine": name, "rows": [{"ts": 1}], "snapshots": snapshots})
             state = self.store.gather(now=1000)
             self.assertEqual(len(state["machines"]), 2)
-            self.assertEqual(len(state["cloud"]["pools"]), 6)
+            self.assertEqual(len(state["cloud"]["pools"]), 4)
             self.assertEqual({row["machine"] for row in state["journal"]}, {"pc", "laptop"})
             self.assertEqual(self.request()[0], 200)
             one = json.loads(self.request("/api/state?machine=pc")[2])

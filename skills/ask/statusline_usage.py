@@ -1,4 +1,4 @@
-"""Refresh the weekly Claude usage cache from status-line stdin, without a model call."""
+"""Refresh Claude usage windows from status-line stdin, without a model call."""
 import json
 import math
 import os
@@ -71,7 +71,7 @@ def _window_text(name, window, now, words):
     return text
 
 
-def _write_usage(percent, reset, now):
+def _write_usage(rates, now):
     path = os.path.expanduser(os.environ.get("ASK_CLAUDE_USAGE_PATH") or
                               "~/.cache/ask/claude_usage.json")
     try:
@@ -81,17 +81,37 @@ def _write_usage(percent, reset, now):
         previous = {}
     windows = previous.get("windows")
     windows = windows if isinstance(windows, list) else []
-    old_weekly = next((w for w in windows if isinstance(w, dict) and
-                       w.get("label") == WEEKLY_LABEL), {})
-    reset_iso = reset.isoformat().replace("+00:00", "Z") if reset else None
+    fresh = []
+    for key in sorted(rates):
+        if key == "seven_day":
+            label = WEEKLY_LABEL
+        elif key == "five_hour":
+            label = "Five-hour · all models"
+        elif key.startswith("seven_day_"):
+            label = "Weekly · " + key[len("seven_day_"):].replace("_", " ").capitalize()
+        else:
+            continue
+        raw = _object(rates[key])
+        percent = _percent(raw)
+        if percent is None:
+            continue
+        reset = _reset(raw.get("resets_at"))
+        fresh.append({"label": label, "percentUsed": percent,
+                      "resetsAt": reset.isoformat().replace("+00:00", "Z") if reset else None})
+    if not fresh:
+        return
+    fresh.sort(key=lambda w: (w["label"] != WEEKLY_LABEL, w["label"].startswith("Five-hour"), w["label"]))
+    old = {w.get("label"): w for w in windows if isinstance(w, dict)}
     read_at = _reset(previous.get("read_at"))
-    if (old_weekly.get("percentUsed") == percent and old_weekly.get("resetsAt") == reset_iso
+    if (all(all(old.get(w["label"], {}).get(k) == w[k] for k in ("percentUsed", "resetsAt"))
+            for w in fresh) and previous.get("statusline_keys") == sorted(rates)
             and read_at is not None and (now - read_at).total_seconds() <= 300):
         return
 
+    labels = {w["label"] for w in fresh}
     kept = []
     for window in windows:
-        if not isinstance(window, dict) or window.get("label") == WEEKLY_LABEL:
+        if not isinstance(window, dict) or window.get("label") in labels:
             continue
         expires = _reset(window.get("resetsAt"))
         if expires is None or expires <= now:
@@ -107,13 +127,20 @@ def _write_usage(percent, reset, now):
                 window["read_at"], own = previous.get("read_at"), read_at  # the file's time becomes the window's
         if own is not None and (now - own).total_seconds() > STALE_S:
             continue
+        window.setdefault("source", previous.get("source", "get_usage"))
         kept.append(window)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    for window in fresh:
+        window["read_at"] = stamp
     entry = {
         "plan": previous.get("plan", "subscription"),
-        "read_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "read_at": stamp,
         "source": "statusline",
-        "windows": [{"label": WEEKLY_LABEL, "percentUsed": percent, "resetsAt": reset_iso}] + kept,
+        "windows": fresh + kept,
+        "statusline_keys": sorted(rates),
     }
+    if isinstance(previous.get("extra_usage"), dict):
+        entry["extra_usage"] = previous["extra_usage"]
     directory = os.path.dirname(os.path.abspath(path))
     os.makedirs(directory, exist_ok=True)
     temporary = None
@@ -144,18 +171,15 @@ def main(stdin_text, now=None):
             parts.append(" ".join(model.split()))
         rates = _object(data.get("rate_limits"))
         weekly = _object(rates.get("seven_day"))
-        percent = _percent(weekly)
-        reset = _reset(weekly.get("resets_at"))
         words = _words()
         for name, window in (("week", weekly), ("five_hour", _object(rates.get("five_hour")))):
             text = _window_text(name, window, now, words)
             if text is not None:
                 parts.append(text)
-        if percent is not None:
-            try:
-                _write_usage(percent, reset, now)
-            except Exception:
-                pass  # A cache failure must not break the displayed status line.
+        try:
+            _write_usage(rates, now)
+        except Exception:
+            pass  # A cache failure must not break the displayed status line.
     except Exception:
         pass
     try:

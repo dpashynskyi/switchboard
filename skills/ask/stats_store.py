@@ -1,6 +1,7 @@
 """File-only shared dashboard storage. No provider discovery or live probes."""
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -59,6 +60,82 @@ def rows_from(path):
                     continue
     except FileNotFoundError:
         return
+
+
+def claude_accounts(snapshots, now):
+    """Merge (machine, snapshot) pairs by plan and weekly reset, then by window age.
+
+    Reset clusters span at most one hour; missing resets join the first cluster.
+    Sorting makes ambiguous/missing-reset assignment deterministic.
+    """
+    def stamp(value):
+        parsed = route._parse_iso_utc(value) if isinstance(value, str) else None
+        return parsed.timestamp() if parsed else float("-inf")
+
+    def weekly_all(window):
+        label = str(window.get("label", "")).lower()
+        return "week" in label and "all models" in label
+
+    entries = []
+    for machine, data in snapshots:
+        windows = data.get("windows")
+        if not isinstance(windows, list) or not windows:
+            continue
+        reset = next((stamp(w.get("resetsAt")) for w in windows
+                      if isinstance(w, dict) and weekly_all(w)), float("-inf"))
+        entries.append((str(data.get("plan") or "subscription"), reset, machine, data))
+    groups = []
+    for plan, reset, machine, data in sorted(entries, key=lambda e: (e[0], -e[1], e[2])):
+        group = next((g for g in groups if g[0] == plan and
+                      (not math.isfinite(reset) or abs(g[1] - reset) <= 3600)), None)
+        if group is None:
+            group = (plan, reset, [])
+            groups.append(group)
+        group[2].append((machine, data))
+
+    accounts = []
+    for plan, _, members in groups:
+        picked, extras = {}, []
+        for machine, data in members:
+            if isinstance(data.get("extra_usage"), dict):
+                extras.append((stamp(data.get("read_at")), machine, data["extra_usage"]))
+            for raw in data["windows"]:
+                if not isinstance(raw, dict) or not isinstance(raw.get("label"), str):
+                    continue
+                used = raw.get("percentUsed")
+                if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used):
+                    continue
+                read_at = raw.get("read_at", data.get("read_at"))
+                read_ts = stamp(read_at)
+                label = raw["label"]
+                if label in picked and read_ts <= picked[label][0]:
+                    continue
+                try:
+                    win = route._build_window({k: raw.get(k) for k in ("label", "percentUsed", "resetsAt")}, now)
+                except (ValueError, TypeError, AttributeError, OverflowError):
+                    continue
+                age = max(0, now - read_ts)
+                picked[label] = (read_ts, {
+                    "label": label, "used_percent": used, "left_percent": 100 - used,
+                    "resets_at": raw.get("resetsAt"), "resets_in": win["resets_in"],
+                    "pace_str": win["pace_str"], "window": win["window"],
+                    "read_at": read_at, "age_s": age if math.isfinite(age) else None,
+                    "stale": age > route.CLAUDE_STALE_SECONDS,
+                    # A window whose own read time differs from the file's was not read by the file's source: the
+                    # status line keeps get_usage's windows beside its own (and older files carry no source per window).
+                    "source": raw.get("source") or ("get_usage" if raw.get("read_at") not in (None, data.get("read_at"))
+                                                     else data.get("source", "get_usage")), "machine": machine,
+                })
+        def order(win):
+            return (0 if weekly_all(win) else 1 if win["window"] == "weekly" else
+                    2 if win["window"] == "5h" else 3, win["label"])
+        account = {"plan": plan, "label": "Claude (" + plan + ")",
+                   "machines": sorted(machine for machine, _ in members),
+                   "windows": sorted((w for _, w in picked.values()), key=order)}
+        if extras:
+            account["extra_usage"] = max(extras, key=lambda e: (e[0], e[1]))[2]
+        accounts.append(account)
+    return accounts
 
 
 class StatsStore:
@@ -129,7 +206,7 @@ class StatsStore:
         now = time.time() if now is None else now
         rules = route.load_roles()
         names = sorted(p.name for p in self.root.iterdir() if p.is_dir() and MACHINE.fullmatch(p.name)) if self.root.exists() else []
-        machines, rows, pools = [], [], []
+        machines, rows, pools, claude = [], [], [], []
         for name in names:
             if selected not in ("all", name):
                 continue
@@ -164,6 +241,8 @@ class StatsStore:
                     view["pools"].extend(convert(snapshots.get(key, {})))
                 except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
                     view["errors"].append("Invalid " + key + " snapshot")
+            claude.append((name, snapshots.get("claude_usage", {})))
+            view["pools"] = [p for p in view["pools"] if p.get("provider") != "claude-subscription"]
             try:
                 route._apply_reservations_to_pools(view["pools"], snapshots.get("reservations", []))
             except (ValueError, TypeError, KeyError, AttributeError):
@@ -183,4 +262,5 @@ class StatsStore:
         chart, recent = journal_views(rows, now)
         return {"server_mode": True, "machine": selected, "machine_names": names, "machines": machines,
                 "generated_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+                "claude": claude_accounts(claude, now),
                 "cloud": {"ok": True, "pools": pools}, "chart": chart, "journal": recent}

@@ -90,8 +90,23 @@ class LimitsTests(unittest.TestCase):
                     saved = json.load(handle)
                 self.assertEqual((saved["plan"], saved["windows"][0]["percentUsed"]), ("Ultra", 86))
                 self.assertNotIn("resetsIn", saved["windows"][0])
+                self.assertNotIn("extra_usage", saved)
         with self.assertRaises(ValueError):
             limits.write_claude_usage(json.dumps({"plan": {"status": "unavailable"}}), os.devnull)
+
+    def test_extra_usage_dict_at_top_or_inside_plan(self):
+        plan = {"plan": "Ultra", "windows": [{"label": "Weekly · all models", "percentUsed": 22}]}
+        for key in ("extraUsage", "extra_usage"):
+            for nested in (False, True):
+                for extra in ({"enabled": True, "spent": 3}, {}, None, "invalid"):
+                    data = {"plan": dict(plan)}
+                    (data["plan"] if nested else data)[key] = extra
+                    with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as tmp:
+                        saved = limits.write_claude_usage(json.dumps(data), os.path.join(tmp, "usage.json"))
+                    if isinstance(extra, dict):
+                        self.assertEqual(saved["extra_usage"], extra)
+                    else:
+                        self.assertNotIn("extra_usage", saved)
 
     def test_claude_json_from_stdin_is_utf8_whatever_the_console(self):
         import io

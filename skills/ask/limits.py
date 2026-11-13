@@ -110,6 +110,12 @@ def write_claude_usage(raw, path=None):
     if not windows:
         raise ValueError("no windows in the get_usage reply")
     entry = {"read_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "plan": plan.get("plan"), "windows": windows, "source": "get_usage"}
+    for container in (data, plan):
+        extra = next((container[key] for key in ("extraUsage", "extra_usage")
+                      if isinstance(container.get(key), dict)), None)
+        if extra is not None:
+            entry["extra_usage"] = extra
+            break
     path = path or os.path.expanduser(os.environ.get("ASK_CLAUDE_USAGE_PATH") or route.CLAUDE_USAGE_PATH)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # Atomic: the status line and the band read this file at any moment.

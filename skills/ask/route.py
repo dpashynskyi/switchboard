@@ -1086,6 +1086,8 @@ def _window_length_s(window_name, label="", explicit_length=None):
     s = f"{window_name or ''} {label or ''}".lower()
     if "week" in s or "7d" in s:
         return 7 * 86400.0
+    if "five-hour" in s or "5-hour" in s:
+        return 5 * 3600.0
     m_h = re.search(r"(\d+)\s*h", s)
     if m_h:
         return float(m_h.group(1)) * 3600.0
@@ -1117,7 +1119,7 @@ def _build_window(win_raw, now_ts, default_covers=None):
         low_lbl = wlabel.lower()
         if "week" in low_lbl:
             wtype = "weekly"
-        elif "5h" in low_lbl or "5-hour" in low_lbl:
+        elif "5h" in low_lbl or "5-hour" in low_lbl or "five-hour" in low_lbl:
             wtype = "5h"
         else:
             wtype = wlabel
