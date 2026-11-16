@@ -55,6 +55,7 @@ class HandoffTests(unittest.TestCase):
         self.stack.enter_context(contextlib.redirect_stdout(self.out))
         self.stack.enter_context(contextlib.redirect_stderr(self.err))
         self.history = self.stack.enter_context(mock.patch.object(handoff, "acp_history", return_value=[]))
+        self.threads = self.stack.enter_context(mock.patch.object(handoff, "_codex_threads", return_value={}))
 
     def main(self, *args):
         self.out.seek(0); self.out.truncate()
@@ -146,7 +147,10 @@ class HandoffTests(unittest.TestCase):
             self.row(cid)
             path = Path(providers.expand("~/.codex")) / "sessions/2026/11/05" / ("rollout-stamp-" + cid + ".jsonl")
             self.append(path, self.turn("old 1", "old answer 1") + self.turn("old 2", "old answer 2") + [self.usage(100)])
+            self.threads.reset_mock()
             self.assertEqual(self.main("--handoff", cid), 0)
+            # Unarchived for the terminal, archived again once back.
+            self.assertEqual([c.args[1:3] for c in self.threads.call_args_list], [(cid, "thread/unarchive")])
             clean = route.read_journal_24h()
             self.append(path, self.turn("someone@example.com " + "x" * 350,
                                        "sk-" + "x" * 20 + "\n\nSecond paragraph",
@@ -162,6 +166,7 @@ class HandoffTests(unittest.TestCase):
                 self.assertNotIn("Second paragraph", out)
             else:
                 self.assertEqual(out.strip(), "The user finished in the terminal and passed nothing on (1 turns).")
+            self.assertEqual([c.args[1:3] for c in self.threads.call_args_list][-1], (cid, "thread/archive"))
             state = handoff._json(handoff._path(cid))
             self.assertFalse(state["open"]); self.assertEqual(state["turns"], 1)
             self.assertEqual(state["mode"], mode)

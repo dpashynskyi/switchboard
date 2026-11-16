@@ -106,6 +106,12 @@ def acp_history(executable, session_id, cwd, timeout=60):
         transport.close()
 
 
+def _codex_threads(cli, conversation, method, home):
+    """Best effort: an older Codex without thread/archive leaves the thread where it is."""
+    return broker.codex_threads([cli, "app-server"], [conversation], method,
+                                env=dict(os.environ, CODEX_HOME=home) if home else None, cwd=route.CODEX_ROOM)
+
+
 def _rollout(home, conversation):
     # Do not interpolate an untrusted id into a glob.
     files = [p for p in (Path(home) / "sessions").glob("**/rollout-*.jsonl")
@@ -198,6 +204,8 @@ def start(arg, context_flag=None):
     if provider == "codex":
         acc = next(a for a in adapter.accounts() if a["id"] == account)
         state["home"] = providers.expand(acc["where"])
+        # Runs archive their threads; the user's terminal and the Codex app need it back among the active ones.
+        _codex_threads(adapter.path(), cid, "thread/unarchive", state["home"])
         path = _rollout(state["home"], cid)
         lines = _lines(path)
         state["mark"] = {"path": str(path), "lines": len(lines), "total_token_usage": _usage(lines)}
@@ -255,6 +263,9 @@ def back(conversation, mode):
                                   state["provider"], str(turn.get("model") or state["model"]) + " (terminal)")
         log.write(turn["reasoning"])
         log.close("summary" if turn["reasoning"] else "none")
+    if state["provider"] == "codex":
+        # Back from the terminal, the thread is switchboard's again: out of the Codex app's list, as a run leaves it.
+        _codex_threads(providers.get("codex").path(), conversation, "thread/archive", state.get("home"))
     state.update(open=False, closed=time.time(), mode=mode, turns=len(turns))
     broker.atomic_json(str(_path(conversation)), state)
     fields = dict(_event_fields(state), mode=mode, turns=len(turns))

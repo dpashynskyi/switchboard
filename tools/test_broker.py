@@ -920,10 +920,74 @@ class BrokerTests(unittest.TestCase):
             def fake_start(driver):
                 driver.command = [sys.executable, "-B", str(HERE / "fake_agents.py"), "codex", "--script", '{"resumeError":true}']
                 broker.Driver.start(driver)
-            with mock.patch.object(broker.CodexAppDriver, "start", fake_start), mock.patch.object(subprocess, "Popen", side_effect=launch):
+            with mock.patch.object(broker.CodexAppDriver, "start", fake_start), mock.patch.object(subprocess, "Popen", side_effect=launch), \
+                 mock.patch.object(writer, "codex_threads", return_value={}) as threads:
                 code = writer.main(["--cwd", self.cwd, "--model", "model", "--codex", "--continue", "old", "Continue"])
             self.assertEqual(code, 0)
             self.assertEqual(release.call_count, 2)
+            # The legacy run brings the thread back before codex exec resume, and archives it after.
+            self.assertEqual([c.args[1:3] for c in threads.call_args_list],
+                             [(["old"], "thread/unarchive"), (["old"], "thread/archive")])
+
+    def tidied(self):
+        return [(e["msg"]["params"]["method"], e["msg"]["params"]["params"]) for e in self.events
+                if e["dir"] == "in" and e["msg"].get("method") == "fake/tidy"]
+
+    def test_codex_run_archives_its_thread_and_resume_unarchives_it(self):
+        self.run_driver("codex")
+        self.assertEqual(self.tidied(), [("thread/archive", {"threadId": "fake-thread"})])
+        self.assertIn("archived thread fake-thread", self.notes)
+        self.events.clear()
+        self.run_driver("codex", {"resumeUsage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}, conversation="old")
+        self.assertEqual(self.tidied(), [("thread/unarchive", {"threadId": "old"}), ("thread/archive", {"threadId": "old"})])
+        self.events.clear()
+        self.run_driver("codex", keep_thread=True)
+        self.assertEqual(self.tidied(), [])
+
+    def test_an_interrupted_codex_turn_is_stopped_then_archived(self):
+        driver = self.driver("codex", {"honourCancel": True, "turns": [{"steps": [{"hang": True}]}]})
+        runner = threading.Thread(target=lambda: self.assertRaises(Exception, driver.run, "test prompt"), daemon=True)
+        runner.start()
+        wait_for(lambda: driver.turn_id)
+        driver.close()  # what a Ctrl-C or a SIGTERM's finally does mid-turn
+        runner.join(5)
+        sent = [e["msg"].get("method") for e in self.events if e["dir"] == "out"]
+        self.assertLess(sent.index("turn/interrupt"), sent.index("thread/archive"))
+        self.assertEqual(self.tidied(), [("thread/archive", {"threadId": "fake-thread"})])
+
+    def test_acp_session_closed_when_the_agent_offers_it(self):
+        self.run_driver("agy", {"sessionClose": True})
+        self.assertEqual(self.tidied(), [("session/close", {"sessionId": "fake-session"})])
+        self.events.clear()
+        self.run_driver("agy")
+        self.assertEqual(self.tidied(), [])
+
+    def test_an_older_server_without_tidy_methods_still_finishes(self):
+        driver, result = self.run_driver("codex", {"noTidy": True})
+        self.assertEqual(result["response"], "Done")
+        self.assertFalse(driver.failed)
+        self.assertTrue(any(n.startswith("note: tidying the conversation failed") for n in self.notes))
+        driver, result = self.run_driver("codex", {"noTidy": True, "resumeUsage": {
+            "inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}, conversation="old")
+        self.assertEqual(result["response"], "Done")
+
+    def test_codex_threads_through_a_short_server(self):
+        fake = [sys.executable, "-B", str(HERE / "fake_agents.py"), "codex", "--script"]
+        self.assertEqual(broker.codex_threads(fake + ["{}"], ["a", "b"], "thread/archive"), {"a": None, "b": None})
+        failed = broker.codex_threads(fake + ['{"noTidy": true}'], ["a"], "thread/unarchive")
+        self.assertIn("unsupported method", failed["a"])
+        self.assertEqual(broker.codex_threads(fake + ["{}"], [], "thread/archive"), {})
+
+    @unittest.skipIf(os.name == "nt", "SIGHUP and a SIGTERM to oneself are POSIX")
+    def test_sigterm_and_sighup_unwind_like_ctrl_c(self):
+        import signal
+        saved = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)}
+        self.addCleanup(lambda: [signal.signal(s, h) for s, h in saved.items()])
+        broker.exit_on_signals()
+        for number in saved:
+            with self.assertRaises(KeyboardInterrupt):
+                os.kill(os.getpid(), number)
+                time.sleep(1)
 
     def test_rename_destination_is_checked_and_contents_are_not_paths(self):
         paths, summary = broker.file_details({"changes": [{"path": "old.txt", "kind": {
