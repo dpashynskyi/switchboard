@@ -184,6 +184,23 @@ class SweepTests(unittest.TestCase):
         self.assertEqual(self.pre_push(f'(delete) {zero} refs/heads/x {msg_tip}\n')[0], 0)
         self.assertEqual(self.pre_push(f'refs/heads/main {tip} refs/heads/main {tip}\n')[0], 0)
 
+    def test_pre_push_when_the_remote_tip_is_not_fetched(self):
+        # The remote moved on from another machine: its tip is no object here. The sweep still reads what is
+        # outgoing (all the destination remote is not known to have) instead of failing to read the repository.
+        self.add('a.txt', 'safe\n')
+        base = self.commit()
+        self.git('update-ref', 'refs/remotes/origin/main', base)
+        self.add('a.txt', 'hello alice\n')
+        tip = self.commit()
+        unknown = 'f' * 40
+        code, out = self.pre_push(f'refs/heads/main {tip} refs/heads/main {unknown}\n', remote='origin')
+        self.assertEqual(code, 1)
+        self.assertIn(':a.txt:1: personal term', out)
+        self.add('a.txt', 'safe again\n')
+        clean = self.commit()
+        self.git('update-ref', 'refs/remotes/origin/main', tip)
+        self.assertEqual(self.pre_push(f'refs/heads/main {clean} refs/heads/main {unknown}\n', remote='origin')[0], 0)
+
     def test_pre_push_merges_tags_and_the_destination_remote(self):
         zero = '0' * 40
         self.add('a.txt', 'safe\n')

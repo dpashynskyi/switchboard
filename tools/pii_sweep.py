@@ -178,6 +178,14 @@ def tracked_files(root, staged=False):
 ZERO = re.compile(r'^0+$')
 
 
+def has_commit(root, sha):
+    try:
+        git(root, 'cat-file', '-e', sha + '^{commit}')
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def outgoing(root, lines, remote=None):
     """(label, data) of what a push sends: each new commit's message and the blobs it adds or changes. lines are
     git's pre-push input: <local ref> <local sha> <remote ref> <remote sha>."""
@@ -191,7 +199,10 @@ def outgoing(root, lines, remote=None):
             yield f'{local[:10]}:tag', git(root, 'cat-file', 'tag', local)  # an annotated tag's message and tagger
         # A new ref: what the destination remote does not have (another remote's commits may be private there).
         known = ['--remotes=' + remote] if remote else ['--remotes']
-        spec = [local, '--not', *known] if ZERO.match(theirs) else [local, '^' + theirs]
+        # The remote's tip may be a commit not fetched yet (pushed from another machine): then what we know the
+        # remote has is all we can leave out. git refuses the push itself if it is not a fast-forward.
+        new = ZERO.match(theirs) or not has_commit(root, theirs)
+        spec = [local, '--not', *known] if new else [local, '^' + theirs]
         for commit in git(root, 'rev-list', *spec).decode('ascii').split():
             if commit in seen:
                 continue
