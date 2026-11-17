@@ -16,6 +16,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import time
 import sys
 import urllib.parse
 
@@ -128,7 +129,8 @@ def terminal_argv(line):
         script = (
             'tell application "iTerm"\n'
             "  activate\n"
-            f"  create window with default profile command {_applescript_string(held)}\n"
+            f"  set w to (create window with default profile command {_applescript_string(held)})\n"
+            "  return tty of current session of w\n"
             "end tell"
         )
     else:
@@ -180,7 +182,28 @@ def main(argv=None):
     done = subprocess.run(argv_, capture_output=True, text=True, timeout=60)
     if done.returncode != 0:
         sys.stderr.write((done.stderr or done.stdout or "").strip()[-300:] + "\n")
-    return done.returncode
+        return done.returncode
+    if a.client == "terminal" and argv_[0] == "osascript" and 'application "iTerm"' in argv_[2]:
+        # osascript can exit 0 with no window to show for it: the new session's tty must carry a process.
+        tty = done.stdout.strip()
+        if not window_alive(tty):
+            sys.stderr.write(f"no iTerm window came up (tty {tty or 'none'})\n")
+            return 3
+    return 0
+
+
+def window_alive(tty, wait_s=5.0):
+    """Whether a process runs on the new iTerm session's tty within wait_s seconds."""
+    if not tty.startswith("/dev/tty"):
+        return False
+    name = tty[len("/dev/"):]
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        ps = subprocess.run(["ps", "-o", "pid=", "-t", name], capture_output=True, text=True)
+        if ps.stdout.strip():
+            return True
+        time.sleep(0.25)
+    return False
 
 
 if __name__ == "__main__":

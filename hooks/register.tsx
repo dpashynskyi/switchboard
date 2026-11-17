@@ -237,8 +237,9 @@ async function drawLauncher($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
   const model = picked ? (picked.models.includes(pick?.model ?? '') ? (pick?.model as string) : picked.models[0]) : null
 
   return (
-    <Box key="launcher" flexDirection="column">
-      <Box flexDirection="row" columnGap={1} alignItems="center">
+    // A graphical surface draws Buttons taller than a line of text: without a gap between the rows they overlap.
+    <Box key="launcher" flexDirection="column" rowGap={e.surface === 'terminal' ? 0 : 'sm'}>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={e.surface === 'terminal' ? 0 : 'xs'} alignItems="center">
         <Text dimColor>{w().newSession}</Text>
         {list === null ? <Text dimColor>{w().providersReading}</Text> : null}
         {(list ?? []).map(p => (
@@ -253,7 +254,7 @@ async function drawLauncher($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
         ))}
       </Box>
       {picked && model ? (
-        <Box flexDirection="row" columnGap={1} alignItems="center">
+        <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={e.surface === 'terminal' ? 0 : 'xs'} alignItems="center">
           <Select
             key={`model-${picked.id}`}
             label={`${w().model}: `}
