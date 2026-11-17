@@ -1,13 +1,18 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderInput } from 'claude-code'
 
-import type { BandData, BandPool } from '../types'
+import type { BandData, BandPool, LaunchProvider } from '../types'
 
 // The band above the prompt: the week's pools (from the router, through band.py) and the linked sessions.
 // It reads local files and runs one local script, once a minute; it calls no model.
 const data = atom({ plugin: 'switchboard', key: 'data' } as const, null, { shape: 'band-3' })
 const isHidden = atom({ plugin: 'switchboard', key: 'isHidden' } as const, false)
 const error = atom({ plugin: 'switchboard', key: 'error' } as const, null)
+// The launcher row above the band: a new session with any provider the router finds, in one of its clients.
+const launch = atom({ plugin: 'switchboard', key: 'launch' } as const, null, { shape: 'launch-1' })
+const launchPick = atom({ plugin: 'switchboard', key: 'launchPick' } as const, null)
+const launchNote = atom({ plugin: 'switchboard', key: 'launchNote' } as const, null)
+const isLauncherHidden = atom({ plugin: 'switchboard', key: 'isLauncherHidden' } as const, false)
 
 // The words a person reads, in the language ASK_LANG names (uk, en), as in skills/ask/limits.py.
 const DEFAULT_LANG: Lang = 'en'
@@ -20,6 +25,9 @@ const WORDS = {
     working: ['сесія працює', 'сесії працюють', 'сесій працюють'], idle: ['вільна', 'вільні', 'вільних'],
     claudeMissing: '⚠️ Claude: цифр немає', claudeOld: (age: string) => `⚠️ Claude: цифри ${age} тому`,
     heads: ['Провайдер', 'Модель', 'Лишилось', 'Скидання', 'Стан'], noQuotas: 'квот немає', updated: 'оновлено',
+    newSession: 'Нова сесія:', launching: 'Відкриваю', opened: 'Відкрито', model: 'модель',
+    launcherCommand: 'Сховати чи показати рядок запуску нових сесій над смугою квот (запам\'ятовується)',
+    launcherHidden: 'Рядок запуску сховано.', launcherShown: 'Рядок запуску показано.', providersReading: 'читаю провайдерів…',
   },
   en: {
     d: 'd', h: 'h', min: 'min', decimal: '.', skip: '❌ the router skips it: ', burns: '⚠️ burns first',
@@ -29,6 +37,9 @@ const WORDS = {
     working: ['session working', 'sessions working', 'sessions working'], idle: ['idle', 'idle', 'idle'],
     claudeMissing: '⚠️ Claude: no numbers', claudeOld: (age: string) => `⚠️ Claude: numbers ${age} old`,
     heads: ['Provider', 'Model', 'Left', 'Resets', 'State'], noQuotas: 'no quotas', updated: 'updated',
+    newSession: 'New session:', launching: 'Opening', opened: 'Opened', model: 'model',
+    launcherCommand: 'Hide or show the row that opens new sessions above the quota band (remembered)',
+    launcherHidden: 'The launcher row is hidden.', launcherShown: 'The launcher row is shown.', providersReading: 'reading providers…',
   },
 }
 type Lang = 'uk' | 'en'
@@ -111,6 +122,49 @@ async function refresh($: EngineInterface): Promise<void> {
     }
 }
 
+const LAUNCH_REFRESH_MS = 30 * 60_000
+let isListing = false
+
+// The providers and models the router finds here, through launch.py list (the router's inventory, no model call).
+async function listProviders($: EngineInterface): Promise<void> {
+  if (isListing) return
+  isListing = true
+  try {
+    const ran = await $.process.run(['python', `${await rootOf($)}/mods/launcher/launch.py`, 'list', '--lang', lang], { timeoutMs: 120_000 })
+    if (ran.exitCode !== 0) {
+      const last = ran.stderr.trim().split('\n').pop()?.trim().slice(0, 120) ?? ''
+      await update($, launchNote, () => `launch.py: ${w().code} ${ran.exitCode}${last ? `: ${last}` : ''}`)
+      return
+    }
+    const parsed = JSON.parse(ran.stdout.trim()) as { providers: LaunchProvider[] }
+    await update($, launch, () => parsed.providers)
+  } catch (err) {
+    await update($, launchNote, () => `launch.py: ${String(err).slice(0, 80)}`).catch(() => undefined)
+  } finally {
+    isListing = false
+  }
+}
+
+async function openSession($: EngineInterface, p: LaunchProvider, model: string, client: { id: string; label: string }): Promise<void> {
+  const said = `${p.label} · ${model} · ${client.label}`
+  await update($, launchNote, () => `${w().launching}: ${said}…`)
+  try {
+    const cwd = await $.session.cwd()
+    const ran = await $.process.run(
+      ['python', `${await rootOf($)}/mods/launcher/launch.py`, 'open', p.id, model, client.id, '--cwd', cwd],
+      { timeoutMs: 60_000 },
+    )
+    if (ran.exitCode !== 0) {
+      const last = ran.stderr.trim().split('\n').pop()?.trim().slice(0, 120) ?? ''
+      await update($, launchNote, () => `⚠️ ${said}: ${w().code} ${ran.exitCode}${last ? `: ${last}` : ''}`)
+      return
+    }
+    await update($, launchNote, () => `✅ ${w().opened}: ${said}`)
+  } catch (err) {
+    await update($, launchNote, () => `⚠️ ${said}: ${String(err).slice(0, 80)}`).catch(() => undefined)
+  }
+}
+
 export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
@@ -119,8 +173,13 @@ export const register: Register = on => {
     await $.command.register({ name: 'limits-band', description: w().command })
     const stored = await $.store.get('isHidden')
     await update($, isHidden, () => stored === true)
+    await $.command.register({ name: 'launcher', description: w().launcherCommand })
+    const launcherStored = await $.store.get('isLauncherHidden')
+    await update($, isLauncherHidden, () => launcherStored === true)
     void refresh($)
     $.clock.every(REFRESH_MS, () => void refresh($))
+    void listProviders($)
+    $.clock.every(LAUNCH_REFRESH_MS, () => void listProviders($))
 
     return next(e)
   })
@@ -142,8 +201,80 @@ export const register: Register = on => {
     return { text: hidden ? w().hidden : w().shown }
   })
 
+  on('command.run', { command: 'launcher' }, async $ => {
+    const hidden = !(await read($, isLauncherHidden))
+    await update($, isLauncherHidden, () => hidden)
+    await $.store.set('isLauncherHidden', hidden)
+    if (!hidden) void listProviders($)
+
+    return { text: hidden ? w().launcherHidden : w().launcherShown }
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (await read($, isHidden))) return next(e)
+    if (e.props.hasSurvey) return next(e)
+    const launcherRow = (await read($, isLauncherHidden)) ? null : await drawLauncher($, e)
+    const bandRow = (await read($, isHidden)) ? null : await drawBand($, e)
+    if (launcherRow === null && bandRow === null) return next(e)
+    const { Box } = $.ui.resolve(e)
+
+    return (
+      <Box key="switchboard" flexDirection="column">
+        {launcherRow}
+        {bandRow}
+      </Box>
+    )
+  })
+}
+
+
+// The launcher: one coloured button per provider; under the picked one, its models and a button per client.
+async function drawLauncher($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
+  const list = await read($, launch)
+  const pick = await read($, launchPick)
+  const note = await read($, launchNote)
+  const { Box, Text, Button, Select } = $.ui.resolve(e)
+  const picked = list?.find(p => p.id === pick?.provider) ?? null
+  const model = picked ? (picked.models.includes(pick?.model ?? '') ? (pick?.model as string) : picked.models[0]) : null
+
+  return (
+    <Box key="launcher" flexDirection="column">
+      <Box flexDirection="row" columnGap={1} alignItems="center">
+        <Text dimColor>{w().newSession}</Text>
+        {list === null ? <Text dimColor>{w().providersReading}</Text> : null}
+        {(list ?? []).map(p => (
+          <Button
+            key={`provider-${p.id}`}
+            variant={picked?.id === p.id ? 'primary' : undefined}
+            onPress={() => void update($, launchPick, () => ({ provider: p.id, model: p.models[0] ?? '' }))}
+          >
+            <Text color={p.color} bold>● </Text>
+            {p.label}
+          </Button>
+        ))}
+      </Box>
+      {picked && model ? (
+        <Box flexDirection="row" columnGap={1} alignItems="center">
+          <Select
+            key={`model-${picked.id}`}
+            label={`${w().model}: `}
+            options={picked.models.map(m => ({ value: m, label: m }))}
+            value={model}
+            onSelect={value => void update($, launchPick, () => ({ provider: picked.id, model: value }))}
+          />
+          {picked.clients.map(c => (
+            <Button key={`open-${picked.id}-${c.id}`} onPress={() => void openSession($, picked, model, c)}>
+              <Text color={picked.color} bold>▶ </Text>
+              {c.label}
+            </Button>
+          ))}
+        </Box>
+      ) : null}
+      {note ? <Text dimColor wrap="truncate-end">{note}</Text> : null}
+    </Box>
+  )
+}
+
+async function drawBand($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
     const band = await read($, data)
     const failed = await read($, error)
     const { Box, Text } = $.ui.resolve(e)
@@ -214,5 +345,4 @@ export const register: Register = on => {
         </Text>
       </Box>
     )
-  })
 }
