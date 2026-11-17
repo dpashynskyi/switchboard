@@ -373,6 +373,16 @@ class Policy:
         self.cwd = os.path.realpath(cwd)
         self.folders = [self.cwd] + [os.path.realpath(d) for d in add_dirs]
         self.home = os.path.realpath(home or os.path.expanduser("~"))
+        self.worktree_folders = []
+        home_claude = self.home.lower().replace("\\", "/").rstrip("/") + "/.claude"
+        for folder in self.folders:
+            normalized = folder.lower().replace("\\", "/")
+            match = re.fullmatch(r"(.*)/\.claude/worktrees/([^./][^/]*)", normalized)
+            # The project above the worktree must hold no protected folder itself: a worktree nested in ~/.claude, in
+            # another worktree's .claude or in .ssh gets no exception (review: such a run folder came out "allow").
+            if (match and match[1] + "/.claude" != home_claude and not within(folder, os.path.join(self.home, ".claude"))
+                    and not any(re.search(r"/" + re.escape(f) + r"(?:/|$)", match[1]) for f in PROTECTED_FOLDERS)):
+                self.worktree_folders.append(normalized)
         self.command = python + " -I agy_run.py"
         self.engine = engine
         # Words of a command that starts the machine's engine (its hooks' engine_markers): refused without --engine.
@@ -389,15 +399,43 @@ class Policy:
         base = self.cwd if not cwd else os.path.join(self.cwd, os.path.expanduser(cwd))
         return os.path.realpath(value if os.path.isabs(value) else os.path.join(base, value))
 
+    def mask_worktree_folders(self, text):
+        """Hide only the run's worktree prefixes for protected-folder checks."""
+        # JSON-escaped Windows paths come as c://users//...: one slash, so the run folder and the rule both see them.
+        text = re.sub(r"/{2,}", "/", text)
+
+        # Fail closed: only a plain spelling of the run folder is masked. It starts a word (or follows = ( , : [ or an
+        # opening quote, as in JSON ["..."]), goes on with plain path parts only (no . or .., no quote, glob, brace,
+        # $ or space inside), and ends the word (or meets its own closing quote). Anything else stays as written, so a
+        # .claude in it still denies, as before the exception (second review: quotes, globs, braces and :.. slipped
+        # past a looser mask).
+        def mask(match):
+            quote, rest = match["quote"], match["rest"]
+            if any(part in (".", "..") for part in rest.split("/")[1:]):
+                return match[0]
+            after = text[match.end():]
+            if quote:
+                if not re.match(re.escape(quote) + r"(?:[\s;),\]}]|$)", after):
+                    return match[0]
+            elif not re.match(r"(?:[\s;),:]|$)", after):
+                return match[0]
+            return quote + "/<run-folder>" + rest
+
+        for folder in self.worktree_folders:
+            pattern = r"(?:^|(?<=[\s=(,:\[]))(?P<quote>[\"']?)" + re.escape(folder) + r"(?P<rest>(?:/[\w.\-@+]+)*)"
+            text = re.sub(pattern, mask, text)
+        return text
+
     def decide(self, provider, kind, summary, paths=(), command=None, cwd=None, write=None):
         if kind == "question":
             return "human", "questions belong to a human"
         if kind == "file" and write == "destructive":
             return "human", "deleting or moving files needs a human decision"
         text = " ".join(([summary] if kind == "permission" else []) + [command or ""] + list(paths)).lower().replace("\\", "/")
+        protected_text = self.mask_worktree_folders(text)
         blocked = ("git push", "git commit", "taskkill", "kill ", "pkill", "security ", "rm -rf /")
         if (any(s in text for s in blocked) or re.search(r"(?:^|/)\.codex[^/\s]*", text)
-                or any(re.search(r"(?:^|/)" + re.escape(f) + r"(?:/|$|\s)", text) for f in PROTECTED_FOLDERS)
+                or any(re.search(r"(?:^|[/\s'\"=])" + re.escape(f) + r"(?:[/\s'\"]|$)", protected_text) for f in PROTECTED_FOLDERS)
                 or re.search(r"\bgit\b[^;&|]*\b(?:push|commit)\b|\b(?:kill|security)\s", text)):
             return "deny", "standing rule forbids this command or path"
         if not self.engine and self.engine_markers is None and kind == "command" and command != self.command:
@@ -424,7 +462,8 @@ class Policy:
                     if not (word == words[0] and provider == "agy" and command == self.command):
                         resolved.append(self.path(word, cwd))
         canonical = " ".join(resolved).lower().replace("\\", "/")
-        if any(re.search(r"/" + re.escape(f) + r"(?:/|$|\s)", canonical) for f in PROTECTED_FOLDERS) or "/.codex" in canonical:
+        protected_canonical = self.mask_worktree_folders(canonical)
+        if any(re.search(r"/" + re.escape(f) + r"(?:/|$|\s)", protected_canonical) for f in PROTECTED_FOLDERS) or "/.codex" in canonical:
             return "deny", "resolved path names a protected configuration folder"
         # The run's own folders may lie outside home (a scratch folder under /private/tmp).
         if any(not within(p, self.home) and not any(within(p, d) for d in self.folders) for p in resolved):

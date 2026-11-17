@@ -979,6 +979,101 @@ class ReviewRound2Tests(unittest.TestCase):
             self.assertEqual(policy.decide("agy", "file", "read", ["file://" + os.path.join(cwd, "a.txt")])[0], "allow")
             self.assertEqual(policy.decide("agy", "file", "read", ["file:///outside/home"])[0], "deny")
 
+    def worktree_policy(self, relative="proj/.claude/worktrees/wt", **kwargs):
+        temporary = tempfile.TemporaryDirectory(dir=str(ROOT))
+        self.addCleanup(temporary.cleanup)
+        home = Path(temporary.name)
+        worktree = home / relative
+        worktree.mkdir(parents=True)
+        return home, worktree, broker.Policy(str(worktree), home=str(home), **kwargs)
+
+    def test_run_claude_worktree_allows_ordinary_files(self):
+        home, worktree, policy = self.worktree_policy()
+        target = str(worktree / "web/ui.css")
+        self.assertEqual(policy.worktree_folders, [os.path.realpath(worktree).lower().replace("\\", "/")])
+        self.assertEqual(policy.decide("agy", "file", "edit", [target], write=True)[0], "allow")
+        self.assertNotEqual(policy.decide("codex", "command", "", command="cat " + target)[0], "deny")
+        self.assertEqual(policy.decide("agy", "file", "edit", ["web/ui.css"], write=True)[0], "allow")
+        self.assertNotEqual(policy.decide("codex", "command", "", command=f'cat "{target}"')[0], "deny")
+        # An explicitly added worktree gets the same narrow exception as cwd.
+        added = broker.Policy(str(home), add_dirs=[str(worktree)], home=str(home))
+        self.assertEqual(added.decide("agy", "file", "edit", [target], write=True)[0], "allow")
+
+    def test_run_claude_worktree_keeps_configuration_and_traversal_protected(self):
+        home, worktree, policy = self.worktree_policy()
+        project = home / "proj"
+        for target in (worktree / ".claude/settings.json", worktree / ".claude/worktrees/inner/a.txt",
+                       project / ".claude/settings.json", project / ".claude/worktrees/other/a.txt",
+                       home / ".claude/settings.json", worktree / ".ssh/key"):
+            with self.subTest(target=target):
+                self.assertEqual(policy.decide("agy", "file", "edit", [str(target)], write=True)[0], "deny")
+                self.assertEqual(policy.decide("codex", "command", "", command="cat " + str(target))[0], "deny")
+        for command in (f"cat {worktree}/../../settings.json", f"cat {worktree}/../other/a.txt",
+                        f"cat {worktree}/./../other/a.txt", f"cat {worktree}/./web/ui.css",
+                        f"cat {worktree}-other/a.txt", "cat $HOME/.claude/worktrees/wt/a.txt",
+                        r"cat %USERPROFILE%\.claude\worktrees\wt\a.txt", "cat .claude/worktrees/wt/a.txt"):
+            with self.subTest(command=command):
+                self.assertEqual(policy.decide("codex", "command", "", command=command)[0], "deny")
+
+    def test_home_claude_and_hidden_worktree_names_get_no_exception(self):
+        for relative in (".claude/worktrees/wt", "proj/.claude/worktrees/.ssh", "proj/.claude/worktrees/.claude"):
+            with self.subTest(relative=relative):
+                _, worktree, policy = self.worktree_policy(relative)
+                self.assertEqual(policy.worktree_folders, [])
+                self.assertEqual(policy.decide("agy", "file", "edit", [str(worktree / "a.txt")], write=True)[0], "deny")
+
+    def test_worktree_mask_does_not_change_other_policy_checks(self):
+        home, worktree, policy = self.worktree_policy()
+        target = str(worktree / "web/ui.css")
+        for command in (f"git -C {worktree} commit", f"git -C {worktree} push"):
+            self.assertEqual(policy.decide("codex", "command", "", command=command)[0], "deny")
+        read_only = broker.Policy(str(worktree), home=str(home), read_only=True)
+        self.assertEqual(read_only.decide("agy", "file", "edit", [target], write=True)[0], "human")
+        engine = broker.Policy(str(worktree), home=str(home), engine_markers=[str(worktree).lower().replace("\\", "/")])
+        self.assertEqual(engine.decide("codex", "command", "", command="cat " + target)[0], "deny")
+        self.assertEqual(policy.decide("agy", "file", "edit", [str(ROOT / "outside.txt")], write=True)[0], "deny")
+
+    def test_worktree_exception_after_its_security_review(self):
+        # A worktree nested in a protected folder is no exception: it came out "allow" in the review.
+        for relative in (".claude/worktrees/wt/.claude/worktrees/inner", "proj/.claude/worktrees/wt/.claude/worktrees/inner",
+                         ".ssh/proj/.claude/worktrees/wt"):
+            with self.subTest(relative=relative):
+                _, worktree, policy = self.worktree_policy(relative)
+                self.assertEqual(policy.worktree_folders, [])
+                self.assertEqual(policy.decide("agy", "file", "edit", [str(worktree / "a.txt")], write=True)[0], "deny")
+        home, worktree, policy = self.worktree_policy()
+        # Quotes do not hide traversal after the run folder, nor end a relative protected folder.
+        for command in (f'cat "{worktree}"/../other/a.txt', f'cat {worktree}/"../.."/a.txt', f'env -C"{worktree}"/.. ls',
+                        'cat ".claude"/settings.json', 'cp -r ".claude" out', "cat '.ssh'"):
+            with self.subTest(command=command):
+                self.assertEqual(policy.decide("codex", "command", "", command=command)[0], "deny")
+        # Second review: shell syntax right after the run folder, or the run folder twice, gets no mask (fail closed).
+        for command in (f"cat {worktree}{worktree}/a.txt", f"cat {worktree}/{worktree}/a.txt", f"cat {home}{worktree}/a.txt",
+                        f'env -C"{worktree}"-other ls', f'dd if="{worktree}"-other/a.txt', f"cat {worktree}*/a.txt",
+                        f"cat {worktree}{{-other,}}/a.txt", f"cat {worktree}/.[.]/.[.]/settings.json",
+                        f"cat {worktree}/{{..,..}}/other/a.txt", f"cat {worktree}/${{u}}../other/a.txt",
+                        f"PYTHONPATH={worktree}/..:src ls", f"env -C{worktree}/..: ls", f'env -C"{worktree}/a b/.." ls',
+                        f'cat "{worktree}/a b/../../settings.json" # "', f"env -C{worktree}/a,b/.. ls"):
+            with self.subTest(command=command):
+                self.assertEqual(policy.decide("codex", "command", "", command=command)[0], "deny")
+        for path in (f"{worktree}{worktree}/a.txt", f"{worktree}/{worktree}/a.txt"):
+            with self.subTest(path=path):
+                self.assertEqual(policy.decide("agy", "file", "edit", [path], write=True)[0], "deny")
+        # The run folder before ; ) : , and JSON-doubled backslashes is still the run folder.
+        for command in (f"cd {worktree}; ls", f"(cd {worktree})", f"PYTHONPATH={worktree}:src ls", f"ls {worktree},x"):
+            with self.subTest(command=command):
+                self.assertNotEqual(policy.decide("codex", "command", "", command=command)[0], "deny")
+        target = str(worktree / "web" / "ui.css")
+        summary = json.dumps({"fileSystem": {"write": [target.replace("/", "\\")]}})
+        self.assertNotEqual(policy.decide("codex", "permission", summary, [target], write=True)[0], "deny")
+
+    @unittest.skipUnless(os.name == "nt", "Windows path spelling")
+    def test_run_claude_worktree_windows_spelling(self):
+        _, worktree, policy = self.worktree_policy()
+        spelling = os.path.realpath(worktree).upper().replace("/", "\\")
+        self.assertNotEqual(policy.decide("codex", "command", "", command="cat " + spelling + r"\web\ui.css")[0], "deny")
+        self.assertEqual(policy.decide("codex", "command", "", command="cat " + spelling + r"\.claude\settings.json")[0], "deny")
+
     def test_redaction_of_more_token_shapes_and_assignments(self):
         for secret in ("ya29.a0AfH6SMBxxxxxxxxxxxxxxxxxxxxxx", "ghs_abcdefghijklmnopqrstuvwxyz01", "AKIAIOSFODNN7EXAMPLE"):
             self.assertNotIn(secret, broker.redact("value " + secret + " end"), secret)
