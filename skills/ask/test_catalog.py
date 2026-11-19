@@ -54,7 +54,7 @@ class CatalogTests(unittest.TestCase):
     def test_a_wish_agy_does_not_list_is_missing_for_every_role_that_has_it(self):
         report = catalog.check(fake=state(agy=ARGON), rules=self.rules, now=1000)
         neon = {role for role, what in self.wishes(report) if what.startswith("gemini-4-neon*")}
-        self.assertEqual(neon, {"review", "second-opinion", "writer", "code-writer", "analysis", "hard"})
+        self.assertEqual(neon, {"review", "second-opinion", "writer", "code-writer", "analysis", "hard", "plan-and-code"})
         line = next(m for m in report["missing"] if m["what"].startswith("gemini-4-neon*"))
         self.assertIn("agy", line["why"])
         # Once agy lists Neon, the wish matches and is no longer said.
@@ -86,6 +86,18 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(sorted((m["provider"], m["what"]) for m in report["missing"]),
                          [("claude-subscription", "claude-opus-9"), ("codex", "gpt-9-typo")])
 
+    def test_an_orchestrator_agy_lists_is_not_missing(self):
+        # Orchestrator ids carry no effort, and the docs give only their names: the wish matches the id or the label.
+        orch = [{"id": "orchestrator-neon", "label": "Orchestrator (Neon)"},
+                {"id": "orchestrator-carbon", "label": "Orchestrator (Carbon)"},
+                {"id": "m-3", "label": "Orchestrator (Argon)"}]
+        report = catalog.check(fake=state(agy=ARGON + NEON + orch), rules=self.rules, now=1000)
+        self.assertFalse([w for w in self.wishes(report) if "orchestrator" in w[1]], report["missing"])
+        # Before agy offers it, each variant is said once, for the role that wishes for it.
+        report = catalog.check(fake=state(agy=ARGON + NEON), rules=self.rules, now=5000)
+        self.assertEqual({w for w in self.wishes(report) if "orchestrator" in w[1]},
+                         {("plan-and-code", f"*orchestrator*{p}*") for p in ("neon", "carbon", "argon")})
+
     def test_new_and_gone_after_the_first_look_and_seen_by_the_user(self):
         first = catalog.check(fake=state(agy=ARGON), rules=self.rules, now=1000)
         self.assertEqual(first["new"], [])  # the first look is the baseline, not a flood of new ids
@@ -95,7 +107,8 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("review", high["roles"])  # taken by a wish, without an edit
         self.assertEqual([g["id"] for g in later["gone"]], ["gemini-4-argon-low"])
         self.assertEqual({n["id"] for n in later["unseen"]}, set(NEON))
-        self.assertTrue(any("new models: " in line for line in catalog.band_notes(later)))
+        # The band's words follow the language another test module may have set first: the id is in either.
+        self.assertTrue(any("gemini-4-neon" in line and "(ask.py --models)" in line for line in catalog.band_notes(later)))
         # The user looks: the band stops saying it; --models still lists it.
         catalog.mark_seen(later, now=5001)
         again = catalog.check(fake=state(agy=ARGON[1:] + NEON), rules=self.rules, now=5002)

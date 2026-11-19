@@ -2186,6 +2186,41 @@ class ProviderTests(unittest.TestCase):
             res = route.pick("review", fake=st)
             self.assertIn(res["model"], ("gemini-4-argon-high", "gpt-6.1-sol"), res["message"])
 
+    def test_plan_and_code_takes_an_orchestrator_by_its_id_or_its_label(self):
+        # Antigravity's Orchestrator: a planner (Neon, Carbon or Argon) and Hydrogen, no effort levels. Its id is not in
+        # Google's docs, so the role wishes by a glob that matches the id or agy's label, Neon first.
+        st = self.state()
+        st["agy_models"] = [{"id": "orchestrator-argon", "label": "Orchestrator (Argon)"},
+                            {"id": "orchestrator-carbon", "label": "Orchestrator (Carbon)"},
+                            {"id": "orchestrator-neon", "label": "Orchestrator (Neon)"},
+                            "gemini-4-neon-high", "gemini-4-argon-high"]
+        with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
+            res = route.pick("plan-and-code", fake=st)
+            self.assertEqual((res["provider"], res["model"]), ("agy", "orchestrator-neon"), res["message"])
+            # It spends the Gemini pool, as Neon and Hydrogen do.
+            row = next(r for r in route.models(fake=st) if r["model"] == "orchestrator-neon")
+            self.assertIn("Gemini", row["pool"])
+            # An id that names no Orchestrator: the label still finds it. Carbon next when Neon is not offered.
+            st["agy_models"] = [{"id": "m-77", "label": "Orchestrator (Carbon)"}, "gemini-4-neon-high"]
+            res = route.pick("plan-and-code", fake=st)
+            self.assertEqual(res["model"], "m-77", res["message"])
+            # No Orchestrator at all (a free account): Neon at high, as code-writer.
+            st["agy_models"] = ["gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-argon-high"]
+            res = route.pick("plan-and-code", fake=st)
+            self.assertEqual(res["model"], "gemini-4-neon-high", res["message"])
+
+    def test_an_orchestrator_takes_no_effort(self):
+        st = self.state()
+        st["agy_models"] = [{"id": "orchestrator-neon", "label": "Orchestrator (Neon)"}, "gemini-4-neon-low", "gemini-4-neon-high"]
+        agy = providers.get("agy", fake=st)
+        self.assertTrue(agy.no_efforts("orchestrator-neon"))
+        self.assertFalse(agy.no_efforts("gemini-4-neon"))
+        with mock.patch.object(ask, "ask_broker", return_value=(0,) * 8) as broker_call:
+            agy.run("agy", "orchestrator-neon", "high", "Q")
+            self.assertEqual(broker_call.call_args.args[1], "orchestrator-neon")
+            agy.run("agy", "gemini-4-neon-low", "high", "Q")
+            self.assertEqual(broker_call.call_args.args[1], "gemini-4-neon-high")
+
     def test_flash_roles_take_hydrogen_when_agy_offers_it(self):
         # Gemini 4 Hydrogen replaces 3.8 Flash, but only on paid Antigravity plans: Flash stays as the fallback.
         st = self.state()

@@ -127,7 +127,8 @@ def read_lists(fake=None, force_refresh=False, rules=None):
                     for eff, mid in r["ids"].items():
                         if mid not in seen:
                             seen.add(mid)
-                            listed["models"].append({"id": mid, "family": r["family"], "effort": eff or None})
+                            listed["models"].append(dict({"id": mid, "family": r["family"], "effort": eff or None},
+                                                         **({"label": r["label"]} if r.get("label") not in (None, mid) else {})))
                 elif r["id"] not in seen:
                     seen.add(r["id"])
                     listed["models"].append({"id": r["id"], "family": r.get("family") or r["id"],
