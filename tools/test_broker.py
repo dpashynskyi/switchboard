@@ -26,6 +26,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 import broker
 import writer
+REAL_SANDBOX_CHECK = writer.codex_sandbox_python_warning  # before any test stubs it
 
 
 ONCE = [{"optionId": "yes-once", "name": "Allow once", "kind": "allow_once"},
@@ -84,6 +85,10 @@ class BrokerTests(unittest.TestCase):
                 return real_run(command, *args, **kwargs)
             raise AssertionError("no external commands")
 
+        # A writer run checks once that Codex's sandbox can start Python, through the real codex: none in tests.
+        sandbox_check = mock.patch.object(writer, "codex_sandbox_python_warning", return_value=None)
+        sandbox_check.start()
+        self.addCleanup(sandbox_check.stop)
         for target, value in (("subprocess.Popen", only_fakes),
                               ("subprocess.run", mock.Mock(side_effect=only_stops)),
                               ("urllib.request.urlopen", mock.Mock(side_effect=AssertionError("no network")))):
@@ -902,6 +907,23 @@ class BrokerTests(unittest.TestCase):
                     result = json.load(handle)
                 self.assertEqual((result["open_todos"], result["todo_turns"]), (["README"], turns))
                 self.assertIn(f"open plan item(s) after {turns} carry-on turn(s): README", sys.stdout.getvalue())
+
+    def test_codex_sandbox_python_check(self):
+        """The check runs `codex sandbox <python> -c 1` and warns only when the sandbox could not start it."""
+        denied = "windows sandbox failed: runner failed during SpawnChild: CreateProcessAsUserW failed: 5 (Access is denied.)"
+        cases = ((mock.Mock(returncode=0, stdout="", stderr=""), None),
+                 (mock.Mock(returncode=1, stdout="", stderr=denied), "Access is denied"),
+                 (mock.Mock(returncode=0, stdout=denied, stderr=""), "Access is denied"),
+                 (OSError("no codex"), "could not run"))
+        for answer, expected in cases:
+            run = mock.Mock(side_effect=answer) if isinstance(answer, Exception) else mock.Mock(return_value=answer)
+            with mock.patch("subprocess.run", run), mock.patch.object(writer.os, "name", "nt"):
+                warning = REAL_SANDBOX_CHECK("C:/py/python.exe", executable="codex")
+            if expected is None:
+                self.assertIsNone(warning)
+            else:
+                self.assertIn(expected, warning)
+            self.assertEqual(run.call_args[0][0], ["codex", "sandbox", "C:/py/python.exe", "-c", "1"])
 
     def test_writer_resume_failure_falls_back_once_to_legacy(self):
         import route

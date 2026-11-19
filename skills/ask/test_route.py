@@ -80,6 +80,10 @@ def setUpModule():
         patcher = mock.patch(target, side_effect=AssertionError("Tests must use fake providers"))
         patcher.start()
         unittest.addModuleCleanup(patcher.stop)
+    # A writer run checks once that Codex's sandbox can start Python, through the real codex: none in tests.
+    patcher = mock.patch.object(writer, "codex_sandbox_python_warning", return_value=None)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
 
 
 def tearDownModule():
@@ -1308,14 +1312,16 @@ class WriterTests(unittest.TestCase):
                      mock.patch.object(route, "JOURNAL_PATH", journal_path), \
                      mock.patch.object(route, "codex_path", return_value="fake-codex"), \
                      mock.patch.object(writer.subprocess, "Popen", side_effect=launch_command) as launch, \
+                     mock.patch.object(writer, "codex_sandbox_python_warning", return_value="[sandbox cannot start it]") as check, \
                      mock.patch.object(route, "release_reservation", wraps=route.release_reservation) as release, \
                      mock.patch.object(sys, "stdout", io.StringIO()) as output, \
                      mock.patch.object(sys, "stderr", io.StringIO()) as errors:
                     self.assertEqual(writer.main(args), 0)
+                self.assertEqual(check.call_count, 1)
                 self.assertIn("final answer", output.getvalue())
                 self.assertIn("conversation writer-thread, 94 billed tokens (fresh 90, cached 40), failed False", output.getvalue())
                 self.assertIn("[pool ChatGPT", output.getvalue())
-                self.assertIn("the caller runs the tests", errors.getvalue())
+                self.assertIn("[sandbox cannot start it]", errors.getvalue())
                 self.assertEqual(launch.call_args.kwargs["stdin"], writer.subprocess.DEVNULL)
                 self.assertEqual(launch.call_args.kwargs["cwd"], tmp)
                 prompt = launch.call_args.args[0][-1]
