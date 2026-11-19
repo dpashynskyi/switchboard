@@ -1,0 +1,5 @@
+{"event": "step_update", "step_update": {"conversation_id": "conv-cap", "step_index": 1, "step_type": "x", "usage": {"input_tokens": 9000, "output_tokens": 1000, "total_tokens": 10000}}}
+{"event": "step_update", "step_update": {"conversation_id": "conv-cap", "step_index": 2, "step_type": "x", "usage": {"input_tokens": 9000, "output_tokens": 1000, "total_tokens": 10000}}}
+{"event": "step_update", "step_update": {"conversation_id": "conv-cap", "step_index": 3, "step_type": "x", "usage": {"input_tokens": 9000, "output_tokens": 1000, "total_tokens": 10000}}}
+{"event": "step_update", "step_update": {"conversation_id": "conv-cap", "step_index": 4, "step_type": "x", "usage": {"input_tokens": 9000, "output_tokens": 1000, "total_tokens": 10000}}}
+{"event": "step_update", "step_update": {"conversation_id": "conv-cap", "step_index": 5, "step_type": "x", "usage": {"input_tokens": 9000, "output_tokens": 1000, "total_tokens": 10000}}}

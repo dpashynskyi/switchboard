@@ -1,0 +1,9 @@
+{
+  "_comment": "mine",
+  "presets": {
+    "fast": {
+      "time": 2.0,
+      "cost": 0.2
+    }
+  }
+}

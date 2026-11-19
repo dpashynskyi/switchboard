@@ -1,0 +1,7 @@
+{"type": "thread.started", "thread_id": "thread-test"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"type": "agent_message", "text": "Codex answer"}}
+{"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 40, "cache_write_input_tokens": 5, "output_tokens": 20, "reasoning_output_tokens": 10}}
+--- stderr ---
+partial stderr
+Codex timed out after 1 s
