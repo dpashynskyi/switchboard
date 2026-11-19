@@ -1,0 +1,36 @@
+{
+  "roles": {
+    "review": {
+      "prefer": [
+        {
+          "provider": "agy",
+          "model": "gemini-4-argon-high"
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6.1-sol"
+        },
+        {
+          "provider": "agy",
+          "model": "gemini-3.8-flash-high"
+        },
+        {
+          "provider": "ollama",
+          "model": "gpt-oss:20b"
+        }
+      ],
+      "score": {
+        "mode": "live",
+        "metrics": [
+          "aa-frontiercode",
+          "aa-terminal-bench",
+          "benchlm-coding"
+        ],
+        "time": 0.5,
+        "cost": 0.3,
+        "time_budget_s": 900,
+        "aa_time_scale": 0.6
+      }
+    }
+  }
+}
