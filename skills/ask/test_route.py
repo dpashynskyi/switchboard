@@ -2351,7 +2351,7 @@ class ProviderTests(unittest.TestCase):
         self.assertIn("gemini-4-argon efforts low, high", text)
         self.assertIn("codex:~/.codex [personal, default]  allowed", text)
         self.assertIn("efforts high", text)
-        self.assertIn("ollama  Ollama (local): paths.ollama is null", text)
+        self.assertIn("ollama  Ollama: paths.ollama is null", text)
         self.assertIn("ollama is not on this machine: passed over", text)
         self.assertNotIn("Claude and GPT models", text.split("claude-subscription", 1)[1].split("\n\n")[0])
 

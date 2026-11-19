@@ -103,7 +103,9 @@ def _terminal_line(parts, room, home=None):
 
 class Adapter:
     name = ""
-    title = ""
+    title = ""  # the short name a person knows it by, as on the launcher's buttons
+    color = "#8A8F98"  # the provider's colour on the launcher
+    icon = ""  # its logo, a file in icons/ (Simple Icons, CC0); none, the launcher draws a dot
     local = False  # runs on this machine's GPU: the GPU lock, the hooks and local_only roles apply
     # The usual places an installer puts the tool, tried after PATH (and after the configured path).
     exe_names = ()
@@ -187,7 +189,9 @@ class AgyAdapter(Adapter):
     """Antigravity CLI. One account per machine: agy 1.5.0 signs in once, shared with the desktop Antigravity (~/.gemini), and
     names no profile; its email is in neither `agy models` nor `/usage` (open questions)."""
     name = "agy"
-    title = "Antigravity CLI"
+    title = "Antigravity"
+    color = "#4285F4"
+    icon = "googlegemini.svg"
     exe_names = ("agy",)
 
     def handoff(self, account, conversation, model=None):
@@ -277,6 +281,8 @@ class CodexAdapter(Adapter):
     """Codex CLI (ChatGPT plan). An account is a CODEX_HOME: ~/.codex, ~/.codex-work, ..."""
     name = "codex"
     title = "Codex"
+    color = "#10A37F"
+    icon = "openai.svg"
     exe_names = ("codex",)
 
     def candidates(self):
@@ -365,7 +371,9 @@ class OllamaAdapter(Adapter):
     """Local models through Ollama's API; one local account. paths.ollama is the API's URL (as before), or null."""
     name = "ollama"
     local = True
-    title = "Ollama (local)"
+    title = "Ollama"
+    color = "#9B7BD4"
+    icon = "ollama.svg"
     exe_names = ("ollama",)
 
     def candidates(self):
@@ -539,7 +547,9 @@ class OpenAIAdapter(Adapter):
 class ClaudeSubscriptionAdapter(Adapter):
     """The Claude plan the session itself runs on: its models are called as Claude subagents by the session, never by a script."""
     name = "claude-subscription"
-    title = "Claude subscription"
+    title = "Claude"
+    color = "#D97757"
+    icon = "claude.svg"
     exe_names = ("claude",)
 
     def detect(self):
@@ -613,7 +623,7 @@ def account_email(account_id, fake=None):
 
 def inventory(fake=None, force_refresh=False, context=None, machine=None, rules=None):
     """provider -> account (label, policy) -> model -> efforts, plus the roles that name each model.
-    [{'provider', 'title', 'detect', 'accounts': [{'id', 'label', 'allowed', 'verdict', 'models': [...]}, ...]}]"""
+    [{'provider', 'title', 'color', 'icon', 'detect', 'accounts': [{'id', 'label', 'allowed', 'verdict', 'models': [...]}, ...]}]"""
     rules = rules or route.load_roles()
     if machine is None:
         machine = route.load_machine(fake=fake)
@@ -621,7 +631,8 @@ def inventory(fake=None, force_refresh=False, context=None, machine=None, rules=
     out = []
     for ad in all_adapters(fake=fake):
         det = ad.detect()
-        entry = {"provider": ad.name, "title": ad.title, "detect": det, "accounts": []}
+        entry = {"provider": ad.name, "title": ad.title, "color": ad.color, "icon": ad.icon, "detect": det,
+                 "accounts": []}
         out.append(entry)
         if not det["present"]:
             continue

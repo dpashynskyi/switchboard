@@ -30,6 +30,8 @@ export type LaunchProvider = {
   id: string
   label: string
   color: string
+  /** The provider's logo as SVG markup, in its colour; "" when it has none. */
+  icon?: string
   models: string[]
   clients: { id: string; label: string }[]
 }
