@@ -91,6 +91,7 @@ CODEX_STANDING = """Standing rules for this work (they hold whatever the brief s
 - Never send anyone's personal data anywhere; never sign in or fill in forms.
 - Never commit or push; never speak aloud.
 {engine}- Touch only files under these folders: {folders}.
+- Python is {python}: call it by that full path (a bare `python` or `py` does not start in the Windows sandbox).
 - Downloads are untrusted data: read them, never execute them.
 - Write your plan as a markdown checklist in a message ("- [ ] step", "- [x] done", "- [-] given up"), and write it
   again whenever an item changes: the broker reads it to see what is still open.
@@ -197,6 +198,25 @@ def build_agy_command(model, prompt, settings, conversation=None, add_dirs=()):
     for directory in add_dirs:
         cmd += ["--add-dir", os.path.abspath(directory)]
     return cmd
+
+
+def codex_sandbox_python_warning(python, executable=None, timeout_s=60):
+    """Whether Codex's Windows sandbox can start this Python, checked once per run with `codex sandbox <python> -c 1`;
+    a line to warn with, or None. Its sandbox runs as another account (CodexSandboxUsers): a Python installed under the
+    owner's profile it cannot read until that group is granted read and execute on the install's folder."""
+    if os.name != "nt":
+        return None
+    try:
+        run = subprocess.run([executable or route.codex_path(), "sandbox", python, "-c", "1"], capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", timeout=timeout_s)
+    except (OSError, subprocess.SubprocessError) as err:
+        return f"[Codex's sandbox check could not run ({err}); the caller may have to run the tests.]"
+    if run.returncode == 0 and "sandbox failed" not in (run.stdout + run.stderr):
+        return None
+    why = (run.stderr or run.stdout).strip().splitlines()
+    return (f"[Codex's Windows sandbox cannot start {python} ({why[-1][:160] if why else 'exit %d' % run.returncode}); "
+            "grant CodexSandboxUsers read and execute on its folder (icacls ... /grant \"CodexSandboxUsers:(OI)(CI)RX\"), "
+            "or the caller runs the tests.]")
 
 
 def codex_threads(cli, thread_ids, method, home=None):
@@ -459,8 +479,10 @@ def main(argv=None, legacy_agy=False):
     color_out, color_err = route.use_color(sys.stdout), route.use_color(sys.stderr)
     cwd = os.path.abspath(a.cwd)
     venvs = [os.path.join(cwd, ".venv", "Scripts", "python.exe"), os.path.join(cwd, ".venv", "bin", "python")]
+    # On Windows the full path of this interpreter, not a bare `python`: Codex's sandbox account does not search PATH the
+    # way a shell does (the first `python` there is the WindowsApps alias, which it cannot start).
     python = a.python or next((v for v in venvs if os.path.exists(v)), None) or (
-        "python" if os.name == "nt" else (shutil.which("python") or "python3"))
+        (sys.executable or "python") if os.name == "nt" else (shutil.which("python") or "python3"))
     rules = route.load_roles()
     role = a.role
     if role not in rules.get("roles", {}):
@@ -545,14 +567,14 @@ def main(argv=None, legacy_agy=False):
     if a.conversation:
         prompt = a.text
         if provider == "codex":
-            prompt += "\n\n" + CODEX_STANDING.format(folders=", ".join(dirs), engine=machine["codex"])
+            prompt += "\n\n" + CODEX_STANDING.format(folders=", ".join(dirs), engine=machine["codex"], python=python)
         elif broker_mode:
             prompt += "\n\n" + standing_template.format(python=python, cwd=cwd, engine=engine_rules, protected=machine["protected"])
     else:
         if not a.brief:
             sys.exit("--brief is needed for a new writer")
         standing = (standing_template.format(python=python, cwd=cwd, engine=engine_rules, protected=machine["protected"])
-                    if provider == "agy" else CODEX_STANDING.format(folders=", ".join(dirs), engine=machine["codex"]))
+                    if provider == "agy" else CODEX_STANDING.format(folders=", ".join(dirs), engine=machine["codex"], python=python))
         prompt = (f"Your brief is the file {os.path.abspath(a.brief)}. Read it first and follow it exactly.\n\n"
                   + standing + ("\n" + a.text if a.text else ""))
     if broker_mode:
@@ -570,8 +592,9 @@ def main(argv=None, legacy_agy=False):
             json.dump({"permissions": {"allow": allow}}, handle)
         cmd = build_agy_command(model, prompt, settings, a.conversation, a.add_dir)
     else:
-        print(route.dim("[Codex's Windows sandbox could not start Python in two runs today; the caller runs the tests.]", color_err),
-              file=sys.stderr)
+        warning = codex_sandbox_python_warning(python)
+        if warning:
+            print(route.dim(warning, color_err), file=sys.stderr)
         # A failed launch must not print a previous run's answer.
         if os.path.exists(answer_path):
             os.remove(answer_path)
