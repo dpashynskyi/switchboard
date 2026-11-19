@@ -2740,6 +2740,7 @@ def filter_role(raw_list, keep):
 
 WISH_KEYS = ("family", "effort", "provider")
 _EFFORT_WISH = re.compile(r"^\s*(>=|<=|=)?\s*([a-z]+)\s*$")
+_EFFORT_RANGE = re.compile(r"^\s*([a-z]+)\s*\.\.\s*([a-z]+)\s*$")
 
 
 def role_rows(entry):
@@ -2770,13 +2771,21 @@ def role_has_wishes(entry):
 
 
 def parse_effort_wish(value):
-    """'>=high' -> ('>=', 'high'), 'high' -> ('=', 'high'), None or '' -> None; an effort the order does not know -> ValueError."""
+    """'>=high' -> ('>=', 'high'), 'high' -> ('=', 'high'), 'high..xhigh' -> ('..', 'xhigh', 'high') (the strongest from
+    high up to xhigh: a raised effort where the model has it, the floor kept), None or '' -> None; an effort the order does
+    not know -> ValueError."""
     if value is None or str(value).strip() == "":
         return None
-    m = _EFFORT_WISH.match(str(value).lower())
     order = _providers().EFFORT_ORDER
+    r = _EFFORT_RANGE.match(str(value).lower())
+    if r:
+        lo, hi = r.group(1), r.group(2)
+        if lo not in order or hi not in order or order.index(lo) > order.index(hi):
+            raise ValueError(f"effort {value!r}: expected low..high, two of {', '.join(order)}, the weaker first")
+        return "..", hi, lo
+    m = _EFFORT_WISH.match(str(value).lower())
     if not m or m.group(2) not in order:
-        raise ValueError(f"effort {value!r}: expected one of {', '.join(order)}, optionally after >= or <=")
+        raise ValueError(f"effort {value!r}: expected one of {', '.join(order)}, optionally after >= or <=, or a range low..high")
     return (m.group(1) or "="), m.group(2)
 
 
@@ -2788,11 +2797,14 @@ def call_effort(value):
 
 def effort_choice(want, efforts):
     """The effort a wish takes among a model's efforts: >= the weakest at or above the bound (the cheapest that meets it),
-    <= the strongest at or below it, = exactly it. None when none fits."""
+    <= the strongest at or below it, = exactly it, lo..hi the strongest from lo up to hi. None when none fits."""
     pv = _providers()
-    op, bound = want
+    op, bound = want[0], want[1]
     b = pv.effort_rank(bound)
     ranked = pv.sort_efforts(efforts or [])
+    if op == "..":
+        floor = pv.effort_rank(want[2])
+        return next((e for e in reversed(ranked) if floor <= pv.effort_rank(e) <= b), None)
     if op == ">=":
         return next((e for e in ranked if pv.effort_rank(e) >= b), None)
     if op == "<=":

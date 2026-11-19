@@ -18,7 +18,7 @@
       "prefer": [
         {
           "family": "gemini-4-neon*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "any": [
@@ -26,14 +26,15 @@
               "family": "gemini-4-argon*"
             },
             {
-              "family": "gpt-6.1*"
+              "family": "gpt-6.1*",
+              "effort": "high..xhigh"
             }
           ],
           "effort": ">=high"
         },
         {
           "family": "gemini-4-hydrogen*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "family": "gemini-3.8-flash*",
@@ -59,7 +60,7 @@
           "any": [
             {
               "family": "gemini-4-hydrogen*",
-              "effort": ">=high"
+              "effort": "high..xhigh"
             },
             {
               "family": "gemini-3.8-flash*",
@@ -67,13 +68,13 @@
             },
             {
               "family": "gpt-6.1*",
-              "effort": ">=medium"
+              "effort": "medium..high"
             }
           ]
         },
         {
           "family": "gemini-4-neon*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "family": "gemini-4-argon*",
@@ -104,7 +105,7 @@
         },
         {
           "family": "gemini-4-hydrogen*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "family": "gemini-3.8-flash*",
@@ -135,11 +136,11 @@
         },
         {
           "family": "gemini-4-hydrogen*",
-          "effort": "<=low"
+          "effort": "<=medium"
         },
         {
           "family": "gemini-3.8-flash*",
-          "effort": "<=low"
+          "effort": "<=medium"
         }
       ],
       "score": {
@@ -158,12 +159,13 @@
       "prefer": [
         {
           "family": "gemini-4-neon*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "any": [
             {
-              "family": "gpt-6.1*"
+              "family": "gpt-6.1*",
+              "effort": "high..xhigh"
             },
             {
               "family": "gemini-4-argon*"
@@ -198,13 +200,14 @@
       "prefer": [
         {
           "family": "gemini-4-neon*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "any": [
             {
               "family": "gpt-6*",
-              "provider": "codex"
+              "provider": "codex",
+              "effort": "high..xhigh"
             },
             {
               "family": "gemini-4-argon*"
@@ -243,17 +246,23 @@
       "prefer": [
         {
           "family": "gemini-4-neon*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "any": [
             {
-              "family": "gpt-6.1*"
+              "family": "gpt-6.1*",
+              "effort": "high..xhigh"
             },
             {
               "family": "gemini-4-argon*"
             }
           ],
+          "effort": ">=high"
+        },
+        {
+          "family": "claude-sonnet*",
+          "provider": "agy",
           "effort": ">=high"
         },
         {
@@ -284,17 +293,23 @@
         },
         {
           "family": "gemini-4-neon*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "any": [
             {
-              "family": "gpt-6.1*"
+              "family": "gpt-6.1*",
+              "effort": "high..xhigh"
             },
             {
               "family": "gemini-4-argon*"
             }
           ],
+          "effort": ">=high"
+        },
+        {
+          "family": "claude-opus*",
+          "provider": "agy",
           "effort": ">=high"
         },
         {
@@ -336,17 +351,23 @@
         },
         {
           "family": "gemini-4-neon*",
-          "effort": ">=high"
+          "effort": "high..xhigh"
         },
         {
           "any": [
             {
-              "family": "gpt-6.1*"
+              "family": "gpt-6.1*",
+              "effort": "high..xhigh"
             },
             {
               "family": "gemini-4-argon*"
             }
           ],
+          "effort": ">=high"
+        },
+        {
+          "family": "claude-sonnet*",
+          "provider": "agy",
           "effort": ">=high"
         },
         {
