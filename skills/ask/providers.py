@@ -357,7 +357,8 @@ class CodexAdapter(Adapter):
         if not legacy:
             return ask.ask_broker("codex", model, prompt, carry_on, effort=effort,
                                   home=self._home_env(account), verbose=verbose, **kw)
-        return ask.ask_codex(model, prompt, carry_on, timeout_s, effort=effort, home=self._home_env(account))
+        return ask.ask_codex(model, prompt, carry_on, timeout_s, effort=effort, home=self._home_env(account),
+                             keep_thread=kw.get("keep_thread", False))
 
 
 class OllamaAdapter(Adapter):

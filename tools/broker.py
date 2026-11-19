@@ -198,6 +198,80 @@ def answer_pending(base, option, text=""):
     return pending
 
 
+TIDY_TIMEOUT = 10
+
+
+def unarchive(rpc, thread_id, progress=None):
+    """Bring an archived Codex thread back to the list; a thread never archived (or an older server) is no error."""
+    try:
+        rpc.request("thread/unarchive", {"threadId": thread_id}, TIDY_TIMEOUT)
+        if progress:
+            progress("unarchived thread " + str(thread_id))
+    except (RpcError, TimeoutError):
+        pass
+
+
+def codex_threads(command, thread_ids, method="thread/archive", env=None, cwd=None, progress=None):
+    """Send method (thread/archive or thread/unarchive) for each thread through a short-lived `codex app-server`,
+    for the paths that do not run one (codex exec, a handoff, ask.py --tidy). -> {thread id: None, or the error}."""
+    note = progress or (lambda text: None)
+    done = {}
+    if not thread_ids:
+        return done
+
+    def refuse(method_name, params, request_id):
+        raise RpcError({"code": -32601, "message": "not served here: " + method_name})
+
+    def stop(process):
+        if process.poll() is None:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
+            else:
+                import signal
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except OSError:
+                    pass
+
+    try:
+        rpc = Transport(command, cwd or os.path.expanduser("~"), refuse, lambda m, p: None, lambda d, m: None,
+                        note, stop, env=env)
+    except OSError as error:
+        return {t: str(error) for t in thread_ids}
+    try:
+        rpc.request("initialize", {"clientInfo": {"name": "switchboard-writer", "version": "1.0"}}, 30)
+        rpc.notify("initialized")
+        for thread_id in thread_ids:
+            try:
+                rpc.request(method, {"threadId": thread_id}, TIDY_TIMEOUT)
+                done[thread_id] = None
+            except (RpcError, TimeoutError, RuntimeError) as error:
+                done[thread_id] = str(error)
+    except (RpcError, TimeoutError, RuntimeError, OSError) as error:
+        for thread_id in thread_ids:
+            done.setdefault(thread_id, str(error))
+    finally:
+        rpc.close()
+    return done
+
+
+def exit_on_signals():
+    """SIGTERM and SIGHUP (a cancelled subagent, a closed terminal) end the run as Ctrl-C does, so its finally blocks
+    still stop the agent's processes and archive its thread instead of leaving them behind."""
+    import signal
+
+    def interrupt(signum, frame):
+        raise KeyboardInterrupt("signal %d" % signum)
+    for name in ("SIGTERM", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            signal.signal(number, interrupt)
+        except (ValueError, OSError):  # not the main thread, or the platform refuses
+            pass
+
+
 class RpcError(RuntimeError):
     def __init__(self, error):
         self.error = error
@@ -628,8 +702,11 @@ class Driver:
     def __init__(self, cwd, model, base, progress, event, stop_tree, add_dirs=(), python="python", engine=False,
                  ask="human", ask_timeout=600, max_tokens=None, billed=None, command=None, home=None,
                  deadline=None, deadline_grace=10, env=None, read_only=False, reasoning_sink=None, engine_markers=(),
-                 todo_turns=3):
+                 todo_turns=3, keep_thread=False):
         self.reasoning, self.reasoning_kind = [], None
+        # keep_thread: leave the Codex thread in the app's list; by default a run archives it when it ends (tidy()).
+        self.keep_thread = keep_thread
+        self.capabilities = {}
         self.reasoning_sink = reasoning_sink
         self.env = env
         self.cwd, self.model, self.progress = cwd, model, progress
@@ -759,10 +836,34 @@ class Driver:
             self.human.cancelled.set()
             self.stop_tree(self.transport.process)
 
+    def tidy(self):
+        """Leave nothing of the run behind in the provider, while its server still runs: a turn still going is
+        interrupted, then the provider's own clean-up (_tidy: Codex archives the thread, agy closes the session).
+        Best effort: a server that died or an older one without the method only leaves a note."""
+        rpc = self.transport
+        if (not rpc or not self.conversation or rpc.closed.is_set() or rpc.eof.is_set() or rpc.failure
+                or rpc.process.poll() is not None):
+            return
+        if not self.turn_ended.is_set() and self.timed_out is None:
+            try:
+                self.cancel()
+            except Exception as error:
+                self.progress("note: interrupting the turn before tidying failed: " + str(error))
+        try:
+            self._tidy(rpc)
+        except Exception as error:
+            self.progress("note: tidying the conversation failed: " + str(error))
+
+    def _tidy(self, rpc):
+        pass
+
     def close(self):
         self.human.cancelled.set()
         if self.transport:
-            self.transport.close()
+            try:
+                self.tidy()
+            finally:
+                self.transport.close()
         if self.watchdog and self.watchdog is not threading.current_thread():
             self.watchdog.join()
 
@@ -913,11 +1014,19 @@ class AcpDriver(Driver):
         if self.conversation:
             self.transport.notify("session/cancel", {"sessionId": self.conversation})
 
+    def _tidy(self, rpc):
+        # ACP session/close frees the session in the agent; its history stays, so --continue still works.
+        sessions = self.capabilities.get("sessionCapabilities") or self.capabilities.get("session_capabilities") or {}
+        if "close" in sessions:
+            rpc.request("session/close", {"sessionId": self.conversation}, TIDY_TIMEOUT)
+            self.progress("closed session " + str(self.conversation))
+
     def _run(self, prompt, conversation=None):
         self.start()
         rpc = self.transport
-        rpc.request("initialize", {"protocolVersion": 1, "clientCapabilities": {
+        hello = rpc.request("initialize", {"protocolVersion": 1, "clientCapabilities": {
             "fs": {"readTextFile": False, "writeTextFile": False}, "terminal": False}}, 30)
+        self.capabilities = (hello or {}).get("agentCapabilities") or {}
         params = {"cwd": self.cwd, "mcpServers": []}
         if conversation:
             params["sessionId"] = conversation
@@ -1133,6 +1242,14 @@ class CodexAppDriver(Driver):
             self.transport.request("turn/interrupt", {"threadId": self.conversation, "turnId": self.turn_id},
                                    timeout=self.deadline_grace)
 
+    def _tidy(self, rpc):
+        # Every /ask and writer run is a thread, and the Codex app lists them all: archive it (reversible,
+        # `thread/unarchive`; carrying it on unarchives it). keep_thread (--keep-thread) leaves it listed.
+        if self.keep_thread:
+            return
+        rpc.request("thread/archive", {"threadId": self.conversation}, TIDY_TIMEOUT)
+        self.progress("archived thread " + str(self.conversation))
+
     def _run(self, prompt, conversation=None):
         self.start()
         rpc = self.transport
@@ -1143,6 +1260,9 @@ class CodexAppDriver(Driver):
                             "approvalPolicy": "on-request"}
             if self.add_dirs:
                 start_params["config"] = {"sandbox_workspace_write.writable_roots": [os.path.abspath(d) for d in self.add_dirs]}
+            if conversation:
+                # A run archives its thread when it ends (tidy()); carrying it on brings it back first.
+                unarchive(rpc, conversation, self.progress)
             # Resume with the same sandbox and approvals, so a resumed thread cannot keep wider ones.
             result = rpc.request("thread/resume", dict(start_params, threadId=conversation), 30) if conversation else rpc.request(
                 "thread/start", start_params, 30)

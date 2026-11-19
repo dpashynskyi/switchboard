@@ -80,6 +80,13 @@ def setUpModule():
         patcher = mock.patch(target, side_effect=AssertionError("Tests must use fake providers"))
         patcher.start()
         unittest.addModuleCleanup(patcher.stop)
+    # The legacy Codex path archives its thread through a short app-server; CodexTests check the calls.
+    patcher = mock.patch.object(ask, "codex_tidy", return_value={})
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+    patcher = mock.patch.object(writer, "codex_threads", return_value={})
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
 
 
 def tearDownModule():
@@ -890,6 +897,19 @@ class CodexTests(unittest.TestCase):
                                 journal_path=os.path.join(tmp, "usage.jsonl"))
             self.assertEqual(row["tokens"], dict(tokens, fresh=90, billed=94))
             self.assertEqual(row["conversation"], thread)
+
+    def test_legacy_call_archives_its_thread_and_unarchives_one_carried_on(self):
+        with mock.patch.object(ask.subprocess, "run", return_value=mock.Mock(
+                returncode=0, stdout=self.events(), stderr="")), \
+             mock.patch.object(ask, "codex_tidy", return_value={}) as tidy:
+            ask.ask_codex("gpt-6.1-sol", "Question", False, 20, executable="fake-codex", home="/h")
+            self.assertEqual(tidy.call_args_list, [mock.call("fake-codex", ["thread-test"], "thread/archive", "/h")])
+            tidy.reset_mock()
+            ask.ask_codex("gpt-6.1-sol", "Again", "thread-test", 20, executable="fake-codex")
+            self.assertEqual([c.args[2] for c in tidy.call_args_list], ["thread/unarchive", "thread/archive"])
+            tidy.reset_mock()
+            ask.ask_codex("gpt-6.1-sol", "Kept", False, 20, executable="fake-codex", keep_thread=True)
+            tidy.assert_not_called()
 
     def test_output_file_effort_and_resume_and_empty_response(self):
         def output_file(args, **kwargs):
@@ -3285,8 +3305,12 @@ class AccountChoiceTests(AccountFixture, unittest.TestCase):
                  mock.patch.object(writer.subprocess, "Popen", side_effect=launch) as popen, \
                  mock.patch.object(sys, "stdout", io.StringIO()), \
                  mock.patch.object(sys, "stderr", io.StringIO()) as err:
-                writer.main(["--legacy-cli", "--role", "r", "--cwd", tmp, "--brief", brief, "--log", os.path.join(tmp, "w.json")])
+                with mock.patch.object(writer, "codex_threads", return_value={}) as threads:
+                    writer.main(["--legacy-cli", "--role", "r", "--cwd", tmp, "--brief", brief, "--log", os.path.join(tmp, "w.json")])
         self.assertEqual(popen.call_args.kwargs["env"]["CODEX_HOME"], os.path.join(route.ACCOUNTS_HOME, ".codex-work"))
+        # codex exec leaves its thread in the Codex app's list: archived after the run, on the same account.
+        threads.assert_called_once_with("fake-codex", ["t"], "thread/archive",
+                                        os.path.join(route.ACCOUNTS_HOME, ".codex-work"))
         self.assertIn(f"[account {self.WORK}: CODEX_HOME=", err.getvalue())
 
 

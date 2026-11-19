@@ -115,7 +115,10 @@ class FakeServer:
         if method == "initialize":
             if self.script.get("echoEnv"):
                 self.notify("fake/env", {"value": os.environ.get(self.script["echoEnv"])})
-            self.reply(message, {"protocolVersion": 1} if self.protocol == "acp" else {"userAgent": "fake/1.0"})
+            hello = {"protocolVersion": 1} if self.protocol == "acp" else {"userAgent": "fake/1.0"}
+            if self.protocol == "acp" and self.script.get("sessionClose"):
+                hello["agentCapabilities"] = {"sessionCapabilities": {"close": {}}}
+            self.reply(message, hello)
         elif method == "fake/delayedEcho":
             def echo():
                 time.sleep(message["params"].get("delay", 0))
@@ -134,6 +137,13 @@ class FakeServer:
                 self.notify("thread/tokenUsage/updated", {"threadId": thread["id"], "tokenUsage": {
                     "total": self.script["resumeUsage"]}})
             self.reply(message, {"thread": thread})
+        elif method in ("thread/archive", "thread/unarchive", "session/close"):
+            # The clean-up a run does as it ends; "noTidy": an older server without these methods.
+            if self.script.get("noTidy"):
+                self.send({"id": message["id"], "error": {"code": -32601, "message": "unsupported method"}})
+                return
+            self.notify("fake/tidy", {"method": method, "params": message["params"]})
+            self.reply(message, {})
         elif method in ("session/prompt", "turn/start"):
             if method == "turn/start":
                 if self.script.get("echoTurnParams"):
