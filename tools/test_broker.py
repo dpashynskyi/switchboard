@@ -1194,7 +1194,7 @@ class ReviewRound2Tests(unittest.TestCase):
         try:
             _, result = case.run_driver("codex", {"resumeUsage": before, "turns": [{"usage": "none"}]}, conversation="old")
         finally:
-            case.tmp.cleanup()
+            case.doCleanups()  # undo its patches of subprocess, urlopen, stdout and stderr, not only its folder
         self.assertEqual(result["usage"]["total"], 0)
 
 

@@ -89,6 +89,13 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual(ask.claude_model_id("claude-opus-4-8", rules), "claude-opus-4-8")
         self.assertEqual(ask.claude_model_id("claude", rules), "claude")
 
+    def test_windows_command_loses_its_quotes(self):
+        # On Windows the quotes around a path stayed on, so no program by that name could start.
+        raw = '"C:\\Program Files\\Python\\python.exe" -I "C:\\Users\\me\\fake claude.py"'
+        with mock.patch.dict(os.environ, {"ASK_CLAUDE_CMD": raw}), mock.patch.object(ask.os, "name", "nt"):
+            self.assertEqual(ask.claude_cli(), ["C:\\Program Files\\Python\\python.exe", "-I",
+                                                "C:\\Users\\me\\fake claude.py"])
+
 
 if __name__ == "__main__":
     unittest.main()
