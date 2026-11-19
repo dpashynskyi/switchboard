@@ -28,6 +28,7 @@ python3 ~/switchboard/skills/ask/ask.py --unload                                
 python3 ~/switchboard/skills/ask/ask.py --status                                    # context, policy, pools, reservations, GPU, journal
 python3 ~/switchboard/skills/ask/ask.py --context personal <model> "question"       # the context explicitly, over ASK_CONTEXT
 python3 ~/switchboard/skills/ask/ask.py --list [--refresh] [--notes]                # the inventory; live lists past the cache
+python3 ~/switchboard/skills/ask/ask.py --models [--refresh]                        # role rows no live list has; new and gone models
 python3 ~/switchboard/skills/ask/limits.py                                          # the week's limits as one table
 python3 ~/switchboard/skills/ask/dashboard.py                                       # a limits dashboard in the browser (127.0.0.1), presets at /presets
 python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name          # an image (agy's image-generator)

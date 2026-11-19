@@ -35,7 +35,9 @@ WORDS = {
            "below_floor": "нижче порогу", "5h_below_floor": "5 год нижче порогу", "no_quotas": "квот немає",
            "sessions_working": ("сесія працює", "сесії працюють", "сесій працюють"),
            "sessions_idle": ("вільна", "вільні", "вільних"),
-           "claude_missing": "⚠️ Claude: цифр немає", "claude_old": "⚠️ Claude: цифри {span} тому", "decimal": ","},
+           "claude_missing": "⚠️ Claude: цифр немає", "claude_old": "⚠️ Claude: цифри {span} тому", "decimal": ",",
+           "models_missing": "немає в живому списку: {what} (ask.py --models)",
+           "models_new": "нові моделі: {what} (ask.py --models)"},
     "en": {"preset_manual": "manual", "preset_thrifty": "thrifty", "preset_strong": "strong", "preset_fast": "fast", "all_models": "all models", "and": " and ", "d": "d", "h": "h", "min": "min", "spent": "spent",
            "skipped": "skipped", "fast": "fast", "calm": "calm", "resets_in": "resets in {span}",
            "nested": "{name} sits inside \"all models\": its own {own}% left, {avail}% available (the smaller of the two).",
@@ -46,7 +48,9 @@ WORDS = {
            "below_floor": "below the floor", "5h_below_floor": "5 h below the floor", "no_quotas": "no quotas",
            "sessions_working": ("session working", "sessions working", "sessions working"),
            "sessions_idle": ("idle", "idle", "idle"),
-           "claude_missing": "⚠️ Claude: no numbers", "claude_old": "⚠️ Claude: numbers {span} old", "decimal": "."},
+           "claude_missing": "⚠️ Claude: no numbers", "claude_old": "⚠️ Claude: numbers {span} old", "decimal": ".",
+           "models_missing": "not in the live list: {what} (ask.py --models)",
+           "models_new": "new models: {what} (ask.py --models)"},
 }
 
 
