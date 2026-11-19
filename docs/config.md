@@ -63,7 +63,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `models` | `{id: {"provider": ...}}`: a provider for an id no live list names |
 | `presets` | named weight dictionaries: `manual: {}`, `thrifty: {"time": 0.2, "cost": 1.5}`, `strong: {"time": 0.05, "cost": 0.05}`, `fast: {"time": 1.5, "cost": 0.2}`; a preset may also carry `quality` (default 1). Top-level overlay merges by preset name; missing weights inherit the role. Weighted presets only report shadow picks. `ask.py --preset edit` and the dashboard's presets page change them in your file |
 | `subscription_models` | the Claude subscription's model ids (its subagents) |
-| `traits` | `{"cannot": {"local": {"*": ["python", "engine", "big-files"]}, "codex": {"win32": ["python"]}}}`: what a provider (or `local`, every local one) or a model cannot do, by platform (`sys.platform`, `*` any) |
+| `traits` | `{"cannot": {"local": {"*": ["python", "engine", "big-files"]}, "codex": {"win32": ["engine"]}}}`: what a provider (or `local`, every local one) or a model cannot do, by platform (`sys.platform`, `*` any) |
 | `never` | ids or globs never called (`--allow-never` overrides), `never_reason` says why |
 | `floors` | `{"weekly": 0.1, "5h": 0.1}`: a pool window below this share left is not used |
 | `pace_skip` | a weekly pace above this (x the week) passes the pool over while a calmer one comes later |
