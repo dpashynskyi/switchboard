@@ -203,6 +203,10 @@ def outgoing(root, lines, remote=None):
         # remote has is all we can leave out. git refuses the push itself if it is not a fast-forward.
         new = ZERO.match(theirs) or not has_commit(root, theirs)
         spec = [local, '--not', *known] if new else [local, '^' + theirs]
+        if remote and not new:
+            # A branch that exists there: what the destination remote has on its other branches (main merged into
+            # the branch) is already public there, not outgoing.
+            spec += ['--not', '--remotes=' + remote]
         for commit in git(root, 'rev-list', *spec).decode('ascii').split():
             if commit in seen:
                 continue

@@ -201,6 +201,27 @@ class SweepTests(unittest.TestCase):
         self.git('update-ref', 'refs/remotes/origin/main', tip)
         self.assertEqual(self.pre_push(f'refs/heads/main {clean} refs/heads/main {unknown}\n', remote='origin')[0], 0)
 
+    def test_pre_push_of_a_branch_that_merged_the_remotes_main(self):
+        # The branch exists on the remote; main moved on there with a commit the sweep would flag, and the branch
+        # merged it. That commit is already on the destination remote: not outgoing.
+        self.add('a.txt', 'safe\n')
+        self.commit()
+        self.git('switch', '-q', '-c', 'side')
+        self.add('s.txt', 'side\n')
+        side = self.commit()
+        self.git('update-ref', 'refs/remotes/origin/side', side)
+        self.git('switch', '-q', '-')
+        self.add('m.txt', 'main\n')
+        public = self.commit('thanks alice')  # flagged in its message, as GitHub's merge commits were
+        self.git('update-ref', 'refs/remotes/origin/main', public)
+        self.git('switch', '-q', 'side')
+        self.git('merge', '-q', '--no-edit', public)
+        merge = self.git('rev-parse', 'HEAD').decode().strip()
+        self.assertEqual(self.pre_push(f'refs/heads/side {merge} refs/heads/side {side}\n', remote='origin')[0], 0)
+        # Without the remote's main, the same commit is outgoing.
+        self.git('update-ref', '-d', 'refs/remotes/origin/main')
+        self.assertEqual(self.pre_push(f'refs/heads/side {merge} refs/heads/side {side}\n', remote='origin')[0], 1)
+
     def test_pre_push_merges_tags_and_the_destination_remote(self):
         zero = '0' * 40
         self.add('a.txt', 'safe\n')
