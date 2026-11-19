@@ -1094,6 +1094,17 @@ def print_list(agy, ollama, notes=False, ctx=None, refresh=False):
     for pv, m, rs in missing:
         why = f"{pv} is not on this machine" if pv in absent else "not offered now"
         print(route.red(f"{m} ({pv}) is named by {', '.join(rs)} but {why}: passed over.", color))
+    try:
+        import catalog
+        report = catalog.check(fake=fake, force_refresh=refresh, rules=rules)
+        for what, prov, why, roles in catalog.grouped([m for m in report["missing"] if m["kind"] == "wish"]):
+            where = f" ({prov})" if prov else ""
+            print(route.red(f"{what}{where} is wished for by {', '.join(roles)} but {why}: passed over.", color))
+        fresh = [n["id"] for n in report["unseen"]]
+        if fresh:
+            print(route.yellow(f"New since the last look: {', '.join(fresh)} (ask.py --models).", color))
+    except Exception as e:  # the catalog never breaks --list
+        print(route.dim(f"(model catalog not read: {str(e)[:80]})", color))
     if notes:
         try:
             # Keep role-specific evidence together, including models absent from live lists.
@@ -1199,7 +1210,9 @@ def main():
     p.add_argument("--verbose", action="store_true", help="stream agy's steps one line each as they happen")
     p.add_argument("--allow-never", action="store_true", help="allow calling a model in roles.json's never list")
     p.add_argument("--list", action="store_true", help="provider -> account (label) -> model -> efforts, and what this context allows")
-    p.add_argument("--refresh", action="store_true", help="with --list: read the providers' live lists again, past their caches")
+    p.add_argument("--models", action="store_true",
+                   help="the model catalog: role rows the live lists do not have, new and gone models (exit 1 if a row is missing)")
+    p.add_argument("--refresh", action="store_true", help="with --list or --models: read the providers' live lists again, past their caches")
     p.add_argument("--context", help="work or personal; over ASK_CONTEXT; anything else is work (the strict side)")
     p.add_argument("--notes", action="store_true", help="include model capabilities and recent writer verdicts in --list")
     p.add_argument("--context-here", metavar="WORK|PERSONAL",
@@ -1308,6 +1321,12 @@ def main():
         raw_words = [target_name] + raw_words
         target_name = None
 
+    if a.models:
+        import catalog
+        report = catalog.check(fake=route.resolve_fake(), force_refresh=a.refresh)
+        catalog.print_report(report, color=route.use_color(sys.stdout))
+        catalog.mark_seen(report)
+        return 1 if report["missing"] else 0
     if a.list or (not a.role and not target_name):
         return print_list(agy, ollama, notes=a.notes, ctx=ctx, refresh=a.refresh)
 
