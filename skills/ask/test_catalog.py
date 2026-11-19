@@ -4,7 +4,6 @@ import tempfile as _tempfile
 # Isolated before route is imported: a machine's own config and caches are never read or written by a test.
 _os.environ["ASK_CONFIG_DIR"] = _tempfile.mkdtemp(prefix="ask-test-config-")
 _os.environ["ASK_CACHE_DIR"] = _tempfile.mkdtemp(prefix="ask-test-cache-")
-_os.environ["ASK_LANG"] = "en"
 import contextlib
 import io
 import json
@@ -42,6 +41,9 @@ class CatalogTests(unittest.TestCase):
         self.cache = tempfile.mkdtemp(prefix="ask-catalog-")
         self.addCleanup(shutil.rmtree, self.cache, True)
         for p in (mock.patch.object(route, "CACHE_DIR", self.cache),
+                  # The language for these tests only: set at import, it would change the words of every module loaded
+                  # before this one in a full run.
+                  mock.patch.dict(os.environ, {"ASK_LANG": "en"}),
                   mock.patch("subprocess.run", side_effect=AssertionError("tests use fake providers")),
                   mock.patch("urllib.request.urlopen", side_effect=AssertionError("tests use fake providers"))):
             p.start()
@@ -107,8 +109,8 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("review", high["roles"])  # taken by a wish, without an edit
         self.assertEqual([g["id"] for g in later["gone"]], ["gemini-4-argon-low"])
         self.assertEqual({n["id"] for n in later["unseen"]}, set(NEON))
-        # The band's words follow the language another test module may have set first: the id is in either.
-        self.assertTrue(any("gemini-4-neon" in line and "(ask.py --models)" in line for line in catalog.band_notes(later)))
+        self.assertIn("new models: gemini-4-neon", " ".join(catalog.band_notes(later)))
+        self.assertTrue(any("(ask.py --models)" in line for line in catalog.band_notes(later)))
         # The user looks: the band stops saying it; --models still lists it.
         catalog.mark_seen(later, now=5001)
         again = catalog.check(fake=state(agy=ARGON[1:] + NEON), rules=self.rules, now=5002)
