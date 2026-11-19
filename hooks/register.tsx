@@ -251,16 +251,28 @@ async function drawLauncher($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
     <Box key="launcher-providers" flexDirection="row" flexWrap="wrap" columnGap={across} rowGap={e.surface === 'terminal' ? 0 : 'sm'} alignItems="center">
       <Text dimColor>{w().newSession}</Text>
       {list === null ? <Text dimColor>{w().providersReading}</Text> : null}
-      {(list ?? []).map(p => (
-        <Button
-          key={`provider-${p.id}`}
-          variant={picked?.id === p.id ? 'primary' : undefined}
-          onPress={() => void update($, launchPick, () => ({ provider: p.id, model: p.models[0] ?? '' }))}
-        >
-          <Text color={p.color} bold>● </Text>
-          {p.label}
-        </Button>
-      ))}
+      {(list ?? []).map(p => {
+        // A Button holds only text: the logo stands just before it where the surface draws an Svg, a dot in its
+        // colour inside it elsewhere (the terminal, a provider with no logo).
+        const logo = p.icon ? drawLogo($, e, p.icon, p.label) : null
+        const button = (
+          <Button
+            key={`provider-${p.id}`}
+            variant={picked?.id === p.id ? 'primary' : undefined}
+            onPress={() => void update($, launchPick, () => ({ provider: p.id, model: p.models[0] ?? '' }))}
+          >
+            {logo ? null : <Text color={p.color} bold>● </Text>}
+            {p.label}
+          </Button>
+        )
+        if (!logo) return button
+        return (
+          <Box key={`provider-box-${p.id}`} flexDirection="row" columnGap="xs" alignItems="center">
+            {logo}
+            {button}
+          </Box>
+        )
+      })}
     </Box>
   )
   const rest = [
@@ -285,6 +297,13 @@ async function drawLauncher($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
   ].filter(row => row !== null)
 
   return { head, rest }
+}
+
+// A provider's logo, 16 pixels square, where the surface draws an Svg (not the terminal); null elsewhere.
+function drawLogo($: EngineInterface, e: RenderInput<'AbovePrompt'>, icon: string, label: string) {
+  if (e.surface === 'terminal') return null
+  const { Svg } = $.ui.resolve(e)
+  return Svg ? <Svg source={icon} alt={label} width={16} height={16} /> : null
 }
 
 async function drawBand($: EngineInterface, e: RenderInput<'AbovePrompt'>) {

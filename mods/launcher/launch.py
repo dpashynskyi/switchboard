@@ -13,6 +13,7 @@ new Code session on the folder with the app's own model.
 import argparse
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -26,14 +27,7 @@ if ASK not in sys.path:
 
 import providers  # noqa: E402
 
-# Label and colour of each provider's buttons; a provider not named here (a local server) gets the last one.
-LOOK = {
-    "claude-subscription": ("Claude", "#D97757"),
-    "agy": ("agy · Gemini", "#4285F4"),
-    "codex": ("Codex · GPT", "#10A37F"),
-    "ollama": ("Ollama", "#9B7BD4"),
-}
-OTHER = "#8A8F98"
+ICONS = os.path.join(ASK, "icons")
 
 # The clients each provider opens in: (id, label). "terminal" is the provider's own CLI in a new terminal window.
 CLIENTS = {
@@ -59,6 +53,19 @@ def _model_ids(row):
     return [next(iter(ids.values()))]
 
 
+def icon_svg(name, color):
+    """A provider's logo from skills/ask/icons, in its colour, as the markup an Svg element takes; "" when it has none."""
+    if not name or os.path.basename(name) != name:
+        return ""
+    try:
+        with open(os.path.join(ICONS, name), encoding="utf-8") as f:
+            svg = f.read().strip()
+    except OSError:
+        return ""
+    svg = re.sub(r"<title>.*?</title>", "", svg, flags=re.S)
+    return svg.replace("<svg ", f'<svg fill="{color}" ', 1)
+
+
 def listing(lang="en"):
     out = []
     for entry in providers.inventory():
@@ -78,7 +85,7 @@ def listing(lang="en"):
                         in_roles.append(mid)
         if not models:
             continue
-        label, color = LOOK.get(name, (entry.get("title") or name, OTHER))
+        label, color = entry.get("title") or name, entry.get("color") or "#8A8F98"
         clients = CLIENTS.get(name, [])
         if not clients:
             continue
@@ -86,6 +93,7 @@ def listing(lang="en"):
             "id": name,
             "label": label,
             "color": color,
+            "icon": icon_svg(entry.get("icon"), color),
             # The router's own models first, in its order: the one a role picks most is the likeliest wish.
             "models": in_roles + [m for m in models if m not in in_roles],
             "clients": [{"id": c, "label": text if lang == "uk" else CLIENTS_EN.get(c, text)} for c, text in clients],

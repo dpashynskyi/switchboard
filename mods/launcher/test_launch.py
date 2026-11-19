@@ -29,6 +29,21 @@ class LaunchTest(unittest.TestCase):
         self.assertEqual(argv[:2], ["osascript", "-e"])
         self.assertIn("claude-opus-5-5", argv[2])
 
+    def test_a_button_takes_the_providers_title_colour_and_logo(self):
+        entry = {"provider": "codex", "title": "Codex", "color": "#10A37F", "icon": "openai.svg",
+                 "detect": {"present": True},
+                 "accounts": [{"allowed": True, "models": [{"id": "gpt-6", "roles": []}]}]}
+        with mock.patch.object(launch.providers, "inventory", return_value=[entry]):
+            [row] = launch.listing()
+        self.assertEqual((row["label"], row["color"]), ("Codex", "#10A37F"))
+        self.assertTrue(row["icon"].startswith('<svg fill="#10A37F" '))
+        self.assertNotIn("<title>", row["icon"])
+
+    def test_a_provider_with_no_logo_gets_none(self):
+        self.assertEqual(launch.icon_svg("", "#000"), "")
+        self.assertEqual(launch.icon_svg("../roles.json", "#000"), "")
+        self.assertEqual(launch.icon_svg("missing.svg", "#000"), "")
+
     def test_an_unknown_client_is_refused(self):
         with self.assertRaises(SystemExit):
             launch.open_argv("agy", "m", "desktop", "/w")
