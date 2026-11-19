@@ -320,14 +320,27 @@ def _parse_codex_events(raw):
     return "\n\n".join(answer).strip(), tokens, thread_id, quota, failed
 
 
-def ask_codex(model, text, carry_on, timeout_s, effort=None, executable=None, home=None):
+def codex_tidy(cli, thread_ids, method, home=None):
+    """thread/archive or thread/unarchive through a short `codex app-server` (codex exec has neither); best effort."""
+    tools_dir = os.path.abspath(os.path.join(HERE, "..", "..", "tools"))
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+    import broker
+    return broker.codex_threads([cli, "app-server"], [t for t in thread_ids if t], method,
+                                env=dict(os.environ, CODEX_HOME=home) if home else None, cwd=route.CODEX_ROOM)
+
+
+def ask_codex(model, text, carry_on, timeout_s, effort=None, executable=None, home=None, keep_thread=False):
     """Ask in a read-only empty room, the question by stdin, preserving raw events.
-    home: another account's CODEX_HOME (None: the active one)."""
+    home: another account's CODEX_HOME (None: the active one). The thread is archived after the call, as the broker's
+    are (keep_thread leaves it in the Codex app's list), and unarchived before it is carried on."""
     room = route.CODEX_ROOM
     os.makedirs(room, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="answer-", dir=room) as tmp:
         answer_path = os.path.join(tmp, "answer.txt")
         cli = executable or route.codex_path()
+        if isinstance(carry_on, str) and carry_on:
+            codex_tidy(cli, [carry_on], "thread/unarchive", home)
         if carry_on:
             args = [cli, "-s", "read-only", "-C", room, "exec", "resume"]
         else:
@@ -372,6 +385,8 @@ def ask_codex(model, text, carry_on, timeout_s, effort=None, executable=None, ho
             code = code or 2
         if not out and (quota or code != 2):
             out = stderr.strip()
+        if not keep_thread and (thread_id or (isinstance(carry_on, str) and carry_on)):
+            codex_tidy(cli, [thread_id or carry_on], "thread/archive", home)
         return code, out, tokens, log_path, raw, status, thread_id, None
 
 
@@ -500,7 +515,8 @@ def _print_reasoning(mode):
 
 
 def ask_broker(provider, model, text, conversation, *, effort=None, home=None, deadline=1800, ask="never",
-               ask_timeout=600, max_tokens=None, verbose=False, executable=None, command=None, rules=None, pool=None, reasoning="file"):
+               ask_timeout=600, max_tokens=None, verbose=False, executable=None, command=None, rules=None, pool=None, reasoning="file",
+               keep_thread=False):
     LAST_REASONING.clear()
     reasoning_mode = reasoning
     import threading
@@ -569,7 +585,7 @@ def ask_broker(provider, model, text, conversation, *, effort=None, home=None, d
                      engine_markers=hooks.engine_markers(route.load_machine()),
                      env=dict(os.environ, CODEX_HOME=home) if home else None,
                      ask=ask, ask_timeout=ask_timeout, deadline=deadline or None, max_tokens=max_tokens,
-                     billed=lambda t: route.billed_tokens(t, provider, pool=pool, rules=rules)["billed"], **opts)
+                     keep_thread=keep_thread, billed=lambda t: route.billed_tokens(t, provider, pool=pool, rules=rules)["billed"], **opts)
         reasoning_log = None
 
         def open_reasoning(cid):
@@ -646,7 +662,8 @@ def ask_broker(provider, model, text, conversation, *, effort=None, home=None, d
         handle.write(raw_all)
     if fallback:
         LAST_REASONING.clear()
-        return ask_codex(model, text, conversation, int(deadline) if deadline else 300, effort=effort, executable=executable, home=home)
+        return ask_codex(model, text, conversation, int(deadline) if deadline else 300, effort=effort, executable=executable, home=home,
+                         keep_thread=keep_thread)
     return code, out, tokens, log_path, raw_all, status, cid, conv_tok
 
 
@@ -1193,6 +1210,10 @@ def main():
     # The old one-shot CLIs (agy -p, codex exec), without the broker's protocol: kept as the fallback a failed Codex resume
     # takes and for debugging, not offered in --help.
     p.add_argument("--legacy-cli", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--keep-thread", action="store_true",
+                   help="Codex: leave this call's thread in the Codex app's list (by default it is archived when the call ends)")
+    p.add_argument("--tidy", action="store_true",
+                   help="list the switchboard threads left in the Codex app's list; with --yes archive them")
     p.add_argument("--deadline", type=float, default=None, help="agent seconds; 0 disables (role budget in role mode, otherwise 1800)")
     p.add_argument("--ask", choices=("never", "human"), default="never")
     p.add_argument("--ask-timeout", type=float, default=600)
@@ -1222,7 +1243,7 @@ def main():
     p.add_argument("--work-domain", action="append", default=[], help="with --init: your employer's email domain (repeatable)")
     p.add_argument("--roles", action="store_true",
                    help="propose the roles from this machine's models, show the change, write ~/.config/ask/roles.json on a yes")
-    p.add_argument("--yes", action="store_true", help="with --init or --roles: write without asking")
+    p.add_argument("--yes", action="store_true", help="with --init or --roles: write without asking; with --tidy: archive")
     p.add_argument("--needs", type=route.parse_needs, default=[], help="comma-separated needs: python, engine, big-files")
     # Model IDs and question words may surround flags.
     a = p.parse_intermixed_args()
@@ -1237,6 +1258,9 @@ def main():
         return init_config.init(kind=a.machine, work_domains=a.work_domain, yes=a.yes)
     if a.roles:
         return init_config.refresh_roles(yes=a.yes)
+    if a.tidy:
+        import tidy
+        return tidy.run(yes=a.yes)
 
     if a.handoff is not None or a.handoff_back is not None:
         try:
@@ -1458,7 +1482,7 @@ def main():
                         a.timeout, effort=a.effort or decision.get("effort"), verbose=a.verbose, legacy=a.legacy_cli,
                         account=decision.get("account"),
                         deadline=a.deadline, ask=a.ask, ask_timeout=a.ask_timeout, max_tokens=a.max_tokens,
-                        rules=rules, pool=pool_desc, reasoning=a.reasoning
+                        rules=rules, pool=pool_desc, reasoning=a.reasoning, keep_thread=a.keep_thread
                     )
                 finally:
                     route.release_reservation(res_entry)
@@ -1580,7 +1604,7 @@ def main():
                 where, agy, model, text, a.thread or a.carry_on,
                 a.timeout, effort=a.effort, verbose=a.verbose, legacy=a.legacy_cli, account=chk.get("account"),
                         deadline=a.deadline, ask=a.ask, ask_timeout=a.ask_timeout, max_tokens=a.max_tokens,
-                        rules=rules, pool=pool_desc, reasoning=a.reasoning
+                        rules=rules, pool=pool_desc, reasoning=a.reasoning, keep_thread=a.keep_thread
             )
         finally:
             route.release_reservation(res_entry)
@@ -1605,4 +1629,7 @@ def main():
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "..", "tools")))
+    import broker
+    broker.exit_on_signals()  # a cancelled caller's SIGTERM still stops the agent and archives its thread
     sys.exit(main())

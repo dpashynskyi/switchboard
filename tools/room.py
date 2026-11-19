@@ -252,12 +252,25 @@ def cause(stderr):
     return (told or lines or ["no output"])[-1][:300]
 
 
+STOP_GRACE = 30  # seconds a member's ask.py gets, after SIGTERM, to stop its agent and archive its thread
+
+
 def call_member(member, prompt, timeout):
+    process = subprocess.Popen(ask_command(member, prompt), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               encoding="utf-8", errors="replace")
     try:
-        done = subprocess.run(ask_command(member, prompt), capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=timeout)
+        stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        # Terminate, not kill: ask.py unwinds on SIGTERM, so the agent it started does not outlive the turn. On Windows
+        # terminate() is a hard stop, as before.
+        process.terminate()
+        try:
+            process.communicate(timeout=STOP_GRACE)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
         return None, None, f"no answer in {timeout} s"
+    done = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
     found = THREAD.findall(done.stderr or "")
     thread = found[-1] if found else None
     if done.returncode != 0 or not (done.stdout or "").strip():
