@@ -58,9 +58,27 @@ test('the band shows the pools, the marks, the sessions and the stale Claude num
     expect(line?.text).toBe(
       'Anthropic 14% ⚠️ · OpenAI 97% · Google 44% ⚠️   │   2 сесії працюють, 1 вільна   │   ⚠️ Claude: цифри 2 год тому',
     )
-    expect((await ui.find({ type: 'Text', text: /оновлено/ }))?.text).toBe('оновлено 23:40')
+    expect((await ui.find({ type: 'Text', text: /оновлено/ }))?.text).toBe(
+      'оновлено 23:40   │   2 сесії працюють, 1 вільна   │   ⚠️ Claude: цифри 2 год тому',
+    )
     await ui.unmount()
   }
+})
+
+test('one toggle at the line\'s right end opens the table and closes it', async ($, on) => {
+  const clock = engine(on, JSON.stringify(SAMPLE))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const shut = JSON.stringify(await ui.find({ key: 'band-toggle' }))
+  expect(shut).toContain('▴')
+  await ui.press({ key: 'band-toggle' })
+  const open = JSON.stringify(await ui.find({ key: 'band-toggle' }))
+  expect(open).toContain('▾')
+  await ui.press({ key: 'band-toggle' })
+  expect(JSON.stringify(await ui.find({ key: 'band-toggle' }))).toContain('▴')
+  await ui.unmount()
 })
 
 test('the command hides the band and shows it again', async ($, on) => {

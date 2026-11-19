@@ -7,6 +7,8 @@ import type { BandData, BandPool, LaunchProvider } from '../types'
 // It reads local files and runs one local script, once a minute; it calls no model.
 const data = atom({ plugin: 'switchboard', key: 'data' } as const, null, { shape: 'band-3' })
 const isHidden = atom({ plugin: 'switchboard', key: 'isHidden' } as const, false)
+// The quota table open above the band's line: one toggle at the line's right end (remembered).
+const isBandOpen = atom({ plugin: 'switchboard', key: 'isBandOpen' } as const, false)
 const error = atom({ plugin: 'switchboard', key: 'error' } as const, null)
 // The launcher row above the band: a new session with any provider the router finds, in one of its clients.
 const launch = atom({ plugin: 'switchboard', key: 'launch' } as const, null, { shape: 'launch-1' })
@@ -123,8 +125,6 @@ async function refresh($: EngineInterface): Promise<void> {
 }
 
 const LAUNCH_REFRESH_MS = 30 * 60_000
-// The width of the app's collapse mark and the space after it, in cells, on a graphical surface.
-const MARK_CELLS = 5
 let isListing = false
 
 // The providers and models the router finds here, through launch.py list (the router's inventory, no model call).
@@ -175,6 +175,8 @@ export const register: Register = on => {
     await $.command.register({ name: 'limits-band', description: w().command })
     const stored = await $.store.get('isHidden')
     await update($, isHidden, () => stored === true)
+    const open = await $.store.get('isBandOpen')
+    await update($, isBandOpen, () => open === true)
     await $.command.register({ name: 'launcher', description: w().launcherCommand })
     const launcherStored = await $.store.get('isLauncherHidden')
     await update($, isLauncherHidden, () => launcherStored === true)
@@ -221,15 +223,11 @@ export const register: Register = on => {
     const gap = e.surface === 'terminal' ? 0 : 'md'
     if (launcher === null) return <Box key="switchboard" flexDirection="column">{bandRow}</Box>
 
-    // The app draws its own collapse mark (▾) at the band's top left on a graphical surface, beside the first row
-    // only: the rows under it start past the mark, in line with that row's first word, so nothing sits under it.
     return (
       <Box key="switchboard" flexDirection="column" rowGap={gap}>
         {launcher.head}
-        <Box key="under-mark" flexDirection="column" rowGap={gap} paddingLeft={e.surface === 'terminal' ? 0 : MARK_CELLS}>
-          {launcher.rest}
-          {bandRow}
-        </Box>
+        {launcher.rest}
+        {bandRow}
       </Box>
     )
   })
@@ -306,6 +304,12 @@ function drawLogo($: EngineInterface, e: RenderInput<'AbovePrompt'>, icon: strin
   return Svg ? <Svg source={icon} alt={label} width={16} height={16} /> : null
 }
 
+async function toggleBand($: EngineInterface): Promise<void> {
+  const open = !(await read($, isBandOpen))
+  await update($, isBandOpen, () => open)
+  await $.store.set('isBandOpen', open)
+}
+
 async function drawBand($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
     const band = await read($, data)
     const failed = await read($, error)
@@ -342,9 +346,10 @@ async function drawBand($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
       { head: w().heads[3], cells: band.pools.map(p => p.resets), isNumber: true },
       { head: w().heads[4], cells: band.pools.map(stateCell), isNumber: false },
     ]
-    // Collapsed to one line until the pointer is over it, where a surface has a pointer;
-    // the table opens above the line, so the line stays under the pointer and the table does not flicker.
-    const canHover = e.surface === 'desktop' || e.surface === 'vscode' || (e.surface === 'terminal' && e.viewport?.isFullscreen === true)
+    // One line until the toggle at its right end opens the table above it; open, the line says when the numbers
+    // were read instead of repeating them. The only size toggle: the band does not open on hover.
+    const isOpen = await read($, isBandOpen)
+    const { Button } = $.ui.resolve(e)
     // One entry per provider, its pools' leftovers in the table's order: "Google 48% / 44%".
     const providers: string[] = []
     for (const p of band.pools) if (!providers.includes(p.provider)) providers.push(p.provider)
@@ -355,11 +360,7 @@ async function drawBand($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
 
     return (
       <Box key="band" flexDirection="column">
-        <Box
-          flexDirection="column"
-          display={canHover ? 'none' : 'flex'}
-          hover={canHover ? { display: 'flex' } : undefined}
-        >
+        <Box flexDirection="column" display={isOpen ? 'flex' : 'none'}>
           <Box flexDirection="row" columnGap={3}>
             {columns.map(col => (
               <Box flexDirection="column" alignItems={col.isNumber ? 'flex-end' : 'flex-start'}>
@@ -370,11 +371,22 @@ async function drawBand($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
               </Box>
             ))}
           </Box>
-          <Text dimColor>{w().updated} {band.at}</Text>
         </Box>
-        <Text dimColor wrap="truncate-end">
-          {line}
-        </Text>
+        <Box flexDirection="row" columnGap="sm" alignItems="center">
+          <Box flexGrow={1} flexShrink={1} minWidth={0} display={isOpen ? 'none' : 'flex'}>
+            <Text dimColor wrap="truncate-end">{line}</Text>
+          </Box>
+          <Box flexGrow={1} flexShrink={1} minWidth={0} display={isOpen ? 'flex' : 'none'}>
+            <Text dimColor wrap="truncate-end">{[`${w().updated} ${band.at}`, ...tail].join('   │   ')}</Text>
+          </Box>
+          <Button
+            key="band-toggle"
+            plain
+            dimColor
+            label={isOpen ? '▾' : '▴'}
+            onPress={() => void toggleBand($)}
+          />
+        </Box>
       </Box>
     )
 }
