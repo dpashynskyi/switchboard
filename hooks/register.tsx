@@ -123,6 +123,8 @@ async function refresh($: EngineInterface): Promise<void> {
 }
 
 const LAUNCH_REFRESH_MS = 30 * 60_000
+// The width of the app's collapse mark and the space after it, in cells, on a graphical surface.
+const MARK_CELLS = 5
 let isListing = false
 
 // The providers and models the router finds here, through launch.py list (the router's inventory, no model call).
@@ -212,15 +214,22 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const launcherRow = (await read($, isLauncherHidden)) ? null : await drawLauncher($, e)
+    const launcher = (await read($, isLauncherHidden)) ? null : await drawLauncher($, e)
     const bandRow = (await read($, isHidden)) ? null : await drawBand($, e)
-    if (launcherRow === null && bandRow === null) return next(e)
+    if (launcher === null && bandRow === null) return next(e)
     const { Box } = $.ui.resolve(e)
+    const gap = e.surface === 'terminal' ? 0 : 'md'
+    if (launcher === null) return <Box key="switchboard" flexDirection="column">{bandRow}</Box>
 
+    // The app draws its own collapse mark (▾) at the band's top left on a graphical surface, beside the first row
+    // only: the rows under it start past the mark, in line with that row's first word, so nothing sits under it.
     return (
-      <Box key="switchboard" flexDirection="column">
-        {launcherRow}
-        {bandRow}
+      <Box key="switchboard" flexDirection="column" rowGap={gap}>
+        {launcher.head}
+        <Box key="under-mark" flexDirection="column" rowGap={gap} paddingLeft={e.surface === 'terminal' ? 0 : MARK_CELLS}>
+          {launcher.rest}
+          {bandRow}
+        </Box>
       </Box>
     )
   })
@@ -236,43 +245,46 @@ async function drawLauncher($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
   const picked = list?.find(p => p.id === pick?.provider) ?? null
   const model = picked ? (picked.models.includes(pick?.model ?? '') ? (pick?.model as string) : picked.models[0]) : null
 
-  return (
-    // A graphical surface draws Buttons taller than a line of text: without a gap between the rows they overlap.
-    <Box key="launcher" flexDirection="column" rowGap={e.surface === 'terminal' ? 0 : 'sm'}>
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={e.surface === 'terminal' ? 0 : 'xs'} alignItems="center">
-        <Text dimColor>{w().newSession}</Text>
-        {list === null ? <Text dimColor>{w().providersReading}</Text> : null}
-        {(list ?? []).map(p => (
-          <Button
-            key={`provider-${p.id}`}
-            variant={picked?.id === p.id ? 'primary' : undefined}
-            onPress={() => void update($, launchPick, () => ({ provider: p.id, model: p.models[0] ?? '' }))}
-          >
-            <Text color={p.color} bold>● </Text>
-            {p.label}
+  // One spacing step between every two elements, across and down, on every surface: cells on the terminal.
+  const across = 'sm'
+  const head = (
+    <Box key="launcher-providers" flexDirection="row" flexWrap="wrap" columnGap={across} rowGap={e.surface === 'terminal' ? 0 : 'sm'} alignItems="center">
+      <Text dimColor>{w().newSession}</Text>
+      {list === null ? <Text dimColor>{w().providersReading}</Text> : null}
+      {(list ?? []).map(p => (
+        <Button
+          key={`provider-${p.id}`}
+          variant={picked?.id === p.id ? 'primary' : undefined}
+          onPress={() => void update($, launchPick, () => ({ provider: p.id, model: p.models[0] ?? '' }))}
+        >
+          <Text color={p.color} bold>● </Text>
+          {p.label}
+        </Button>
+      ))}
+    </Box>
+  )
+  const rest = [
+    picked && model ? (
+      <Box key="launcher-open" flexDirection="row" flexWrap="wrap" columnGap={across} rowGap={e.surface === 'terminal' ? 0 : 'sm'} alignItems="center">
+        <Select
+          key={`model-${picked.id}`}
+          label={`${w().model}: `}
+          options={picked.models.map(m => ({ value: m, label: m }))}
+          value={model}
+          onSelect={value => void update($, launchPick, () => ({ provider: picked.id, model: value }))}
+        />
+        {picked.clients.map(c => (
+          <Button key={`open-${picked.id}-${c.id}`} onPress={() => void openSession($, picked, model, c)}>
+            <Text color={picked.color} bold>▶ </Text>
+            {c.label}
           </Button>
         ))}
       </Box>
-      {picked && model ? (
-        <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={e.surface === 'terminal' ? 0 : 'xs'} alignItems="center">
-          <Select
-            key={`model-${picked.id}`}
-            label={`${w().model}: `}
-            options={picked.models.map(m => ({ value: m, label: m }))}
-            value={model}
-            onSelect={value => void update($, launchPick, () => ({ provider: picked.id, model: value }))}
-          />
-          {picked.clients.map(c => (
-            <Button key={`open-${picked.id}-${c.id}`} onPress={() => void openSession($, picked, model, c)}>
-              <Text color={picked.color} bold>▶ </Text>
-              {c.label}
-            </Button>
-          ))}
-        </Box>
-      ) : null}
-      {note ? <Text dimColor wrap="truncate-end">{note}</Text> : null}
-    </Box>
-  )
+    ) : null,
+    note ? <Text key="launcher-note" dimColor wrap="truncate-end">{note}</Text> : null,
+  ].filter(row => row !== null)
+
+  return { head, rest }
 }
 
 async function drawBand($: EngineInterface, e: RenderInput<'AbovePrompt'>) {
