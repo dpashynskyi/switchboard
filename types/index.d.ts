@@ -42,6 +42,7 @@ export type LaunchPick = { provider: string; model: string }
 declare module 'claude-code' {
   interface PluginState {
     'switchboard': { data: Shaped<BandData | null>; isHidden: boolean; error: string | null
+      isBandOpen: boolean
       launch: Shaped<LaunchProvider[] | null>
       launchPick: LaunchPick | null
       launchNote: string | null
