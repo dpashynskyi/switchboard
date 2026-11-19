@@ -1,6 +1,6 @@
 ---
 name: ask
-description: Pass a question (or an image request, "draw") to another model word for word and bring its answer back word for word - Gemini, Claude and GPT models through the Antigravity CLI (agy, a Google quota), GPT through Codex (a ChatGPT plan), local models through Ollama; or by role (review, second-opinion, first-read, draft, index, writer, code-writer, analysis, hard) and the router picks the model by quota, pace, experience and the GPU. Use on /ask, "ask gemini", "what would gpt say", or when you offer a second opinion and the user agrees.
+description: Pass a question (or an image request, "draw") to another model word for word and bring its answer back word for word - Gemini, Claude and GPT models through the Antigravity CLI (agy, a Google quota), GPT through Codex (a ChatGPT plan), local models through Ollama; or by role (review, second-opinion, first-read, draft, index, writer, code-writer, analysis, hard, plan-and-code) and the router picks the model by quota, pace, experience and the GPU. Use on /ask, "ask gemini", "what would gpt say", or when you offer a second opinion and the user agrees.
 ---
 
 # /ask: ask another model
@@ -28,6 +28,7 @@ python3 ~/switchboard/skills/ask/ask.py --unload                                
 python3 ~/switchboard/skills/ask/ask.py --status                                    # context, policy, pools, reservations, GPU, journal
 python3 ~/switchboard/skills/ask/ask.py --context personal <model> "question"       # the context explicitly, over ASK_CONTEXT
 python3 ~/switchboard/skills/ask/ask.py --list [--refresh] [--notes]                # the inventory; live lists past the cache
+python3 ~/switchboard/skills/ask/ask.py --models [--refresh]                        # role rows no live list has; new and gone models
 python3 ~/switchboard/skills/ask/limits.py                                          # the week's limits as one table
 python3 ~/switchboard/skills/ask/dashboard.py                                       # a limits dashboard in the browser (127.0.0.1), presets at /presets
 python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name          # an image (agy's image-generator)
@@ -53,13 +54,14 @@ python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name      
 | `writer` | a writer agent on a brief (`tools/writer.py`) | cloud models, then a Claude subagent (exit 6) |
 | `code-writer` | a patch without a build engine | `no_engine`: `--engine` is refused |
 | `analysis` | reading code and records into a findings file | `no_engine` |
-| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then GPT-6.1 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
+| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then Gemini 4 Neon, then GPT-6.1 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
+| `plan-and-code` | plan a change and make it, tests run: `tools/writer.py --role plan-and-code` | Antigravity's Orchestrator first: a planner (Neon, then Carbon on Ultra, then Argon) explores the code and plans, Gemini 4 Hydrogen makes the change and runs the tests, the planner plans again when Hydrogen is stuck; no effort levels (`--effort` is not added to its id). Matched by the name agy gives it (`Orchestrator (Neon)`) when its id says no more. No Orchestrator: Gemini 4 Neon, then GPT-6.1 or Argon, then a Claude Sonnet subagent (exit 6) |
 
 A role row names a model (`{"provider": "agy", "model": "gemini-4-argon-high"}`) or wishes for one:
 `"prefer": [{"family": "gemini-4-argon*", "effort": ">=high"}, {"family": "gpt-6.1*"}]`. A wish is matched against what
 this machine offers when the role is called: a new version under the glob is taken without an edit, a missing provider
 gives `[passed over: ... is not on this machine]`. `>=high` takes the cheapest effort at or above the bound, `<=medium` the
-strongest at or below it. Several matches of one row are equally fit. The order of the rows is the user's; within it the
+strongest at or below it, `high..xhigh` the strongest between the two. Several matches of one row are equally fit. The order of the rows is the user's; within it the
 router passes over what may not or should not go, and says why (`[passed over: ...]` on stderr).
 
 **The choice in a role**, in turn:
@@ -94,7 +96,7 @@ router passes over what may not or should not go, and says why (`[passed over: .
 - `hooks` (optional): a Python file with what only this machine knows (a build engine, games, a quiet-start script); the interface is in `hooks.py` (`local_blockers`, `claim_blockers`, `build_blockers`, `writer_rules`, `engine_markers`), the section's other keys are its settings. Without it, the plain GPU and VRAM checks only. A module that fails to load blocks local models.
 
 ## How a call runs
-- **Broker**: by default `agy acp` / `codex app-server` in a read-only room, the question by the protocol, not the command line. Commands and writes need a human: `--ask never` (the default: a blocked Claude session cannot answer) refuses them; `--ask human` for a background run, the request in `<log>.pending.json`, the answer `ask.py --answer <base> <option> [text]`. `--deadline` counts the agent's seconds without the human waits (`0` turns it off); `--max-tokens N` caps billed tokens; `--verbose` shows the live log.
+- **Broker**: by default `agy acp` / `codex app-server` in a read-only room, the question by the protocol, not the command line. Commands and writes need a human: `--ask never` (the default: a blocked Claude session cannot answer) refuses them; `--ask human` for a background run, the request in `<log>.pending.json`, the answer `ask.py --answer <base> <option> [text]`. `--deadline` counts the agent's seconds without the human waits (`0` turns it off); `--max-tokens N` caps billed tokens; `--verbose` shows the live log. When a call ends, its Codex thread is archived (out of the Codex app's list; `--thread`/`--continue` and a handoff unarchive it) and agy's session closed; `--keep-thread` keeps the thread listed, `ask.py --tidy [--yes]` archives the switchboard threads left from before.
 - **Codex**: `--effort low|medium|high|xhigh|max|ultra`; without it, the model's own. `--continue` resumes the provider's last /ask conversation.
 - **agy**: the effort is part of the id (`<family>-low|medium|high`); `--list` groups ids by family.
 - **Reasoning**: the broker keeps the reasoning summary in `~/.cache/ask/reasoning/<conversation>.md`. `--reasoning file` (default) prints its path; `live` adds a `tail -f` line; `show` prints it before the answer. Later: `--reasoning-read [<conversation>]`, `--reasoning-open [<conversation>]`.
@@ -104,7 +106,7 @@ router passes over what may not or should not go, and says why (`[passed over: .
 - **The Claude subscription's limits** no script can read: the session reads them with the app's `get_usage` and writes `~/.cache/ask/claude_usage.json` (`/limits`).
 
 ## Writers (`tools/writer.py`)
-- Name the kind of work, not the model: `python3 ~/switchboard/tools/writer.py --cwd <folder> --brief BRIEF.md [--role writer|code-writer|analysis]`, with the same choice, reservation, journal and verdicts as `/ask`. `--model <id>` with `--agy`/`--codex`, `--continue <conversation>` (with `--model`), `--add-dir`, `--needs`, `--max-tokens N` (a hard stop past N billed tokens: exit 5), `--deadline` (3600 s by default, exit 9).
+- Name the kind of work, not the model: `python3 ~/switchboard/tools/writer.py --cwd <folder> --brief BRIEF.md [--role writer|code-writer|analysis|plan-and-code]`, with the same choice, reservation, journal and verdicts as `/ask`. `--model <id>` with `--agy`/`--codex`, `--continue <conversation>` (with `--model`), `--add-dir`, `--needs`, `--max-tokens N` (a hard stop past N billed tokens: exit 5), `--deadline` (3600 s by default, exit 9).
 - The broker's policy allows reading and writing in the run's folders and the writer's exact command; refuses git push and commit, killing processes, secrets folders; everything else goes to a human (`--ask human`, answered with `writer.py --answer <log> <option id> [text]`). Logs are redacted.
 - Codex writes with `-s workspace-write` anywhere in `--cwd`: give it its own copy of the repository (a git worktree) when other uncommitted work is near.
 - After every writer, record a verdict: `python3 ~/switchboard/tools/writer.py --verdict <conversation> ok|fixed|rejected "what it was"`; verdicts move models within `experience`.

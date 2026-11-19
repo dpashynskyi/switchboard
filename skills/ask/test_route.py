@@ -84,6 +84,13 @@ def setUpModule():
     patcher = mock.patch.object(writer, "codex_sandbox_python_warning", return_value=None)
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)
+    # The legacy Codex path archives its thread through a short app-server; CodexTests check the calls.
+    patcher = mock.patch.object(ask, "codex_tidy", return_value={})
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+    patcher = mock.patch.object(writer, "codex_threads", return_value={})
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
 
 
 def tearDownModule():
@@ -894,6 +901,19 @@ class CodexTests(unittest.TestCase):
                                 journal_path=os.path.join(tmp, "usage.jsonl"))
             self.assertEqual(row["tokens"], dict(tokens, fresh=90, billed=94))
             self.assertEqual(row["conversation"], thread)
+
+    def test_legacy_call_archives_its_thread_and_unarchives_one_carried_on(self):
+        with mock.patch.object(ask.subprocess, "run", return_value=mock.Mock(
+                returncode=0, stdout=self.events(), stderr="")), \
+             mock.patch.object(ask, "codex_tidy", return_value={}) as tidy:
+            ask.ask_codex("gpt-6.1-sol", "Question", False, 20, executable="fake-codex", home="/h")
+            self.assertEqual(tidy.call_args_list, [mock.call("fake-codex", ["thread-test"], "thread/archive", "/h")])
+            tidy.reset_mock()
+            ask.ask_codex("gpt-6.1-sol", "Again", "thread-test", 20, executable="fake-codex")
+            self.assertEqual([c.args[2] for c in tidy.call_args_list], ["thread/unarchive", "thread/archive"])
+            tidy.reset_mock()
+            ask.ask_codex("gpt-6.1-sol", "Kept", False, 20, executable="fake-codex", keep_thread=True)
+            tidy.assert_not_called()
 
     def test_output_file_effort_and_resume_and_empty_response(self):
         def output_file(args, **kwargs):
@@ -2155,6 +2175,59 @@ class ProviderTests(unittest.TestCase):
             res = route.pick("hard", fake=st)
             self.assertEqual((res["provider"], res["model"]), ("claude-subscription", "claude-fable-5-2"), res["message"])
 
+    def test_argon_roles_take_neon_when_agy_offers_it(self):
+        # Gemini 4 Neon replaces Argon on paid Antigravity plans; hard keeps Carbon first, Neon next.
+        st = self.state()
+        st["agy_models"] = ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-neon-xhigh",
+                            "gemini-4-argon-high", "gemini-4-hydrogen-high", "gemini-3.8-flash-high"]
+        with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
+            for role in ("review", "writer", "code-writer", "analysis", "hard"):
+                res = route.pick(role, fake=st)
+                # One step above high where agy has it (the owner, 19 November 2026: other providers think harder).
+                self.assertEqual((res["provider"], res["model"]), ("agy", "gemini-4-neon-xhigh"), (role, res["message"]))
+            st["agy_models"].append("gemini-4-carbon-high")
+            res = route.pick("hard", fake=st)
+            self.assertEqual(res["model"], "gemini-4-carbon-high", res["message"])
+            # A free account without Neon: Argon (or GPT-6.1) as before.
+            st["agy_models"] = ["gemini-4-argon-high", "gemini-3.8-flash-high"]
+            res = route.pick("review", fake=st)
+            self.assertIn(res["model"], ("gemini-4-argon-high", "gpt-6.1-sol"), res["message"])
+
+    def test_plan_and_code_takes_an_orchestrator_by_its_id_or_its_label(self):
+        # Antigravity's Orchestrator: a planner (Neon, Carbon or Argon) and Hydrogen, no effort levels. Its id is not in
+        # Google's docs, so the role wishes by a glob that matches the id or agy's label, Neon first.
+        st = self.state()
+        st["agy_models"] = [{"id": "orchestrator-argon", "label": "Orchestrator (Argon)"},
+                            {"id": "orchestrator-carbon", "label": "Orchestrator (Carbon)"},
+                            {"id": "orchestrator-neon", "label": "Orchestrator (Neon)"},
+                            "gemini-4-neon-high", "gemini-4-argon-high"]
+        with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
+            res = route.pick("plan-and-code", fake=st)
+            self.assertEqual((res["provider"], res["model"]), ("agy", "orchestrator-neon"), res["message"])
+            # It spends the Gemini pool, as Neon and Hydrogen do.
+            row = next(r for r in route.models(fake=st) if r["model"] == "orchestrator-neon")
+            self.assertIn("Gemini", row["pool"])
+            # An id that names no Orchestrator: the label still finds it. Carbon next when Neon is not offered.
+            st["agy_models"] = [{"id": "m-77", "label": "Orchestrator (Carbon)"}, "gemini-4-neon-high"]
+            res = route.pick("plan-and-code", fake=st)
+            self.assertEqual(res["model"], "m-77", res["message"])
+            # No Orchestrator at all (a free account): Neon at high, as code-writer.
+            st["agy_models"] = ["gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-argon-high"]
+            res = route.pick("plan-and-code", fake=st)
+            self.assertEqual(res["model"], "gemini-4-neon-high", res["message"])
+
+    def test_an_orchestrator_takes_no_effort(self):
+        st = self.state()
+        st["agy_models"] = [{"id": "orchestrator-neon", "label": "Orchestrator (Neon)"}, "gemini-4-neon-low", "gemini-4-neon-high"]
+        agy = providers.get("agy", fake=st)
+        self.assertTrue(agy.no_efforts("orchestrator-neon"))
+        self.assertFalse(agy.no_efforts("gemini-4-neon"))
+        with mock.patch.object(ask, "ask_broker", return_value=(0,) * 8) as broker_call:
+            agy.run("agy", "orchestrator-neon", "high", "Q")
+            self.assertEqual(broker_call.call_args.args[1], "orchestrator-neon")
+            agy.run("agy", "gemini-4-neon-low", "high", "Q")
+            self.assertEqual(broker_call.call_args.args[1], "gemini-4-neon-high")
+
     def test_flash_roles_take_hydrogen_when_agy_offers_it(self):
         # Gemini 4 Hydrogen replaces 3.8 Flash, but only on paid Antigravity plans: Flash stays as the fallback.
         st = self.state()
@@ -2167,7 +2240,7 @@ class ProviderTests(unittest.TestCase):
                 res = route.pick(role, fake=st)
                 self.assertTrue(res["model"].startswith("gemini-4-hydrogen-"), (role, res["message"]))
             res = route.pick("draft", fake=st)
-            self.assertEqual(res["model"], "gemini-4-hydrogen-low", res["message"])
+            self.assertEqual(res["model"], "gemini-4-hydrogen-medium", res["message"])
             st["agy_models"] = ["gemini-3.8-flash-low", "gemini-3.8-flash-high"]
             res = route.pick("draft", fake=st)
             self.assertEqual(res["model"], "gemini-3.8-flash-low", res["message"])
@@ -3010,6 +3083,38 @@ class WishTests(unittest.TestCase):
         self.assertEqual(res["picked"], "gemini-3.8-flash-high")
         self.assertIn("gpt-6.1*: no model on this machine matches at effort >=max", res["passed_over"])
 
+    def test_an_effort_range_takes_the_strongest_inside_it(self):
+        # 'high..xhigh': xhigh where the model has it, high where it stops there, never below high.
+        rules = self.rules({"prefer": [{"family": "gemini-4-argon*", "effort": "high..xhigh"}]})
+        self.assertEqual(route.pick("r", fake=self.state(), rules=rules)["picked"], "gemini-4-argon-xhigh")
+        st = self.state(agy=["gemini-4-argon-low", "gemini-4-argon-high"])
+        self.assertEqual(route.pick("r", fake=st, rules=rules)["picked"], "gemini-4-argon-high")
+        rules = self.rules({"prefer": [{"family": "gemini-4-argon*", "effort": "high..xhigh"}, {"family": "gpt-6.1*"}]})
+        res = route.pick("r", fake=self.state(agy=["gemini-4-argon-low"]), rules=rules)
+        self.assertEqual(res["picked"], "gpt-6.1-sol")
+        self.assertIn("gemini-4-argon*: no model on this machine matches at effort high..xhigh", res["passed_over"])
+        rules = self.rules({"prefer": [{"family": "gpt-6.1*", "effort": "medium..high"}]})
+        res = route.pick("r", fake=self.state(), rules=rules)
+        self.assertEqual((res["picked"], res["effort"]), ("gpt-6.1-sol", "high"))
+        self.assertEqual(route.parse_effort_wish("high..xhigh"), ("..", "xhigh", "high"))
+        for bad in ("xhigh..high", "high..huge"):
+            with self.assertRaises(ValueError):
+                route.parse_effort_wish(bad)
+
+    def test_shipped_roles_take_claude_through_agy_before_the_subscription(self):
+        # The owner, 19 November 2026: agy's Claude pool goes unused; a role that ends on a Claude subagent asks agy first.
+        st = self.state(agy=["claude-opus-5-5-high", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high"], codex=[])
+        with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
+            for role, model in (("writer", "claude-sonnet-5-5-high"), ("code-writer", "claude-sonnet-5-5-high"),
+                                ("analysis", "claude-sonnet-5-5-high"), ("hard", "claude-opus-5-5-high"),
+                                ("plan-and-code", "claude-sonnet-5-5-high")):
+                res = route.pick(role, fake=st)
+                self.assertEqual((res["provider"], res["model"]), ("agy", model), (role, res["message"]))
+            st["agy_models"] = []
+            for role in ("writer", "analysis", "hard", "plan-and-code"):
+                res = route.pick(role, fake=st)
+                self.assertEqual(res["provider"], "claude-subscription", (role, res["message"]))
+
     def test_a_provider_not_on_this_machine_is_skipped_with_a_note(self):
         rules = self.rules({"prefer": [{"family": "gemini-4-argon*", "provider": "agy", "effort": ">=high"},
                                        {"family": "gpt-6.1*", "effort": ">=high"}]})
@@ -3206,8 +3311,12 @@ class AccountChoiceTests(AccountFixture, unittest.TestCase):
                  mock.patch.object(writer.subprocess, "Popen", side_effect=launch) as popen, \
                  mock.patch.object(sys, "stdout", io.StringIO()), \
                  mock.patch.object(sys, "stderr", io.StringIO()) as err:
-                writer.main(["--legacy-cli", "--role", "r", "--cwd", tmp, "--brief", brief, "--log", os.path.join(tmp, "w.json")])
+                with mock.patch.object(writer, "codex_threads", return_value={}) as threads:
+                    writer.main(["--legacy-cli", "--role", "r", "--cwd", tmp, "--brief", brief, "--log", os.path.join(tmp, "w.json")])
         self.assertEqual(popen.call_args.kwargs["env"]["CODEX_HOME"], os.path.join(route.ACCOUNTS_HOME, ".codex-work"))
+        # codex exec leaves its thread in the Codex app's list: archived after the run, on the same account.
+        threads.assert_called_once_with("fake-codex", ["t"], "thread/archive",
+                                        os.path.join(route.ACCOUNTS_HOME, ".codex-work"))
         self.assertIn(f"[account {self.WORK}: CODEX_HOME=", err.getvalue())
 
 

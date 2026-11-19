@@ -45,7 +45,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 
 | Key | What it does |
 |---|---|
-| `prefer` | the rows in order. A row wishes for a model: `{"family": "gemini-4-argon*", "effort": ">=high", "provider": "agy"}` (`family` a glob over the ids of `--list`; `effort` `>=x` the cheapest at or above, `<=x` the strongest at or below, `x` exactly; `provider` optional). Or it names one: `{"provider": "agy", "model": "gemini-4-argon-high"}`. Or a group of equally fit ones: `{"any": [row, row], "effort": ">=high"}` (the quota that expires first goes first) |
+| `prefer` | the rows in order. A row wishes for a model: `{"family": "gemini-4-argon*", "effort": ">=high", "provider": "agy"}` (`family` a glob over the ids of `--list`; `effort` `>=x` the cheapest at or above, `<=x` the strongest at or below, `x..y` the strongest from x up to y (`high..xhigh`: xhigh where the model has it, else high), `x` exactly; `provider` optional). Or it names one: `{"provider": "agy", "model": "gemini-4-argon-high"}`. Or a group of equally fit ones: `{"any": [row, row], "effort": ">=high"}` (the quota that expires first goes first) |
 | `models`, `names` | older spellings of `prefer`, read the same way |
 | `needs` | what the work needs: `python`, `engine`, `big-files`; a model that `traits` says cannot is passed over |
 | `local_only` | never the cloud: waits for the GPU; a machine with no local provider ends at once (exit 8) |
@@ -67,7 +67,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `never` | ids or globs never called (`--allow-never` overrides), `never_reason` says why |
 | `floors` | `{"weekly": 0.1, "5h": 0.1}`: a pool window below this share left is not used |
 | `pace_skip` | a weekly pace above this (x the week) passes the pool over while a calmer one comes later |
-| `pool_covers` | `{"Gemini Models": ["gemini-*"], ...}`: which model ids a quota pool covers |
+| `pool_covers` | `{"Gemini Models": ["gemini-*", "*orchestrator*"], ...}`: which model ids a quota pool covers (an Orchestrator spends the Gemini pool) |
 | `tokens_default` | billed tokens a call of each role is guessed at before its own runs are known |
 | `cache_weight` | how much a cached token counts in a pool, by pool |
 | `rate_default` | a pool window's share per 1M billed tokens until enough runs teach it |
@@ -97,6 +97,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `SWITCHBOARD_ROOT` | where the plugin lies, for the band (default `~/switchboard`) |
 | `CODEX_HOME` | Codex's active account folder; another account the policy picks runs with its own |
 | `CLAUDE_CONFIG_DIR` | the Claude Code profile, shown by `--list` |
+| `ANTHROPIC_API_KEY` | when set, the model catalog also reads Anthropic's model list (`GET /v1/models`, cached a day) to check `subscription_models` and say new Claude models; unset, nothing is asked |
 | `LOCALAPPDATA` | where Windows keeps agy and Codex |
 | `NO_COLOR`, `FORCE_COLOR` | colour off or on |
 | `BROKER_FAKE_SCRIPT` | the fake agent's script, in the broker's tests |
@@ -105,5 +106,6 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 
 All under `~/.cache/ask/`: `usage.jsonl` (the journal, a row a call), `logs/` (raw output), `reasoning/` (reasoning
 summaries), `reservations.json` (running calls' quota shares), `pool_history.json` (eight days of weekly remaining shares), `claude_usage.json`, the providers' model and usage caches
-(`agy_models.json`, `codex_models.json`, ...), `local.lock` (the GPU lock), `ask_last_conversation.json` (for
+(`agy_models.json`, `codex_models.json`, `anthropic_models.json`, ...), `model_catalog.json` (the model catalog: every
+provider's last live list, when each id was first seen or went, what `--models` was last looked at), `local.lock` (the GPU lock), `ask_last_conversation.json` (for
 `--continue`), `handoff/`.

@@ -1194,7 +1194,7 @@ def _covers_from_window_label(wlabel, default_covers=None):
 
 def _covers_for_agy_group(gname, rules):
     pc = (rules or {}).get("pool_covers") or {
-        "Gemini Models": ["gemini-*"],
+        "Gemini Models": ["gemini-*", "*orchestrator*"],
         "Claude and GPT models": ["claude-*", "gpt-oss-*"],
     }
     if gname in pc:
@@ -1908,7 +1908,8 @@ def _read_journal_rows(journal_path=None, fake=None):
 def _token_pool(row, provider):
     """Old rows may lack a pool label."""
     return row.get("pool") or ("ChatGPT" if provider == "codex" else
-                               "Gemini Models" if str(row.get("model") or "").lower().startswith("gemini") else
+                               "Gemini Models" if str(row.get("model") or "").lower().startswith("gemini")
+                               or "orchestrator" in str(row.get("model") or "").lower() else
                                "Claude and GPT models" if provider == "agy" else None)
 
 
@@ -2739,6 +2740,7 @@ def filter_role(raw_list, keep):
 
 WISH_KEYS = ("family", "effort", "provider")
 _EFFORT_WISH = re.compile(r"^\s*(>=|<=|=)?\s*([a-z]+)\s*$")
+_EFFORT_RANGE = re.compile(r"^\s*([a-z]+)\s*\.\.\s*([a-z]+)\s*$")
 
 
 def role_rows(entry):
@@ -2769,13 +2771,21 @@ def role_has_wishes(entry):
 
 
 def parse_effort_wish(value):
-    """'>=high' -> ('>=', 'high'), 'high' -> ('=', 'high'), None or '' -> None; an effort the order does not know -> ValueError."""
+    """'>=high' -> ('>=', 'high'), 'high' -> ('=', 'high'), 'high..xhigh' -> ('..', 'xhigh', 'high') (the strongest from
+    high up to xhigh: a raised effort where the model has it, the floor kept), None or '' -> None; an effort the order does
+    not know -> ValueError."""
     if value is None or str(value).strip() == "":
         return None
-    m = _EFFORT_WISH.match(str(value).lower())
     order = _providers().EFFORT_ORDER
+    r = _EFFORT_RANGE.match(str(value).lower())
+    if r:
+        lo, hi = r.group(1), r.group(2)
+        if lo not in order or hi not in order or order.index(lo) > order.index(hi):
+            raise ValueError(f"effort {value!r}: expected low..high, two of {', '.join(order)}, the weaker first")
+        return "..", hi, lo
+    m = _EFFORT_WISH.match(str(value).lower())
     if not m or m.group(2) not in order:
-        raise ValueError(f"effort {value!r}: expected one of {', '.join(order)}, optionally after >= or <=")
+        raise ValueError(f"effort {value!r}: expected one of {', '.join(order)}, optionally after >= or <=, or a range low..high")
     return (m.group(1) or "="), m.group(2)
 
 
@@ -2787,11 +2797,14 @@ def call_effort(value):
 
 def effort_choice(want, efforts):
     """The effort a wish takes among a model's efforts: >= the weakest at or above the bound (the cheapest that meets it),
-    <= the strongest at or below it, = exactly it. None when none fits."""
+    <= the strongest at or below it, = exactly it, lo..hi the strongest from lo up to hi. None when none fits."""
     pv = _providers()
-    op, bound = want
+    op, bound = want[0], want[1]
     b = pv.effort_rank(bound)
     ranked = pv.sort_efforts(efforts or [])
+    if op == "..":
+        floor = pv.effort_rank(want[2])
+        return next((e for e in reversed(ranked) if floor <= pv.effort_rank(e) <= b), None)
     if op == ">=":
         return next((e for e in ranked if pv.effort_rank(e) >= b), None)
     if op == "<=":
@@ -2814,9 +2827,11 @@ def live_inventory(fake=None, rules=None, agy_path=None, ollama_url=None):
     if "agy" not in absent:
         ok, items = fetch_agy_models(agy_path=agy_path, fake=fake)
         ids = [it["id"] for it in items] if ok else [m for m, inf in model_table(rules).items() if inf["provider"] == "agy"]
+        labels = {it["id"]: it.get("label") for it in items} if ok else {}
         for mid in ids:
             fam, eff = pv.split_agy_id(mid)
-            rows.append({"provider": "agy", "id": mid, "family": fam, "effort": eff})
+            rows.append(dict({"provider": "agy", "id": mid, "family": fam, "effort": eff},
+                             **({"label": labels[mid]} if labels.get(mid) and labels[mid] != mid else {})))
     if "codex" not in absent:
         # Each account has its own list and efforts: a wish is matched per account, and its row
         # then names that account, so the call goes where the id and the effort were found.
@@ -2855,7 +2870,7 @@ def _version_key(text):
 def match_wish(wish, inventory, absent):
     """The ids a wish matches, as role rows, and a note when it matched none. The glob is matched against the id (and, for
     agy, the family without its effort suffix), case aside. Of one family agy gives the id at the chosen effort (no wish:
-    the strongest); Codex and the subscription carry the chosen effort in the row (no wish: the provider's default).
+    the strongest; an id without an effort, such as an Orchestrator's, as it is); Codex and the subscription carry the chosen effort in the row (no wish: the provider's default).
     Order: the newest version first (by the numbers in the id), then the shorter id, then the inventory's provider order."""
     pat = str(wish.get("family") or "").lower()
     prov = wish.get("provider")
@@ -2868,7 +2883,8 @@ def match_wish(wish, inventory, absent):
         if prov and r["provider"] != prov:
             continue
         if r["provider"] == "agy":
-            if fnmatch.fnmatchcase(r["family"].lower(), pat) or fnmatch.fnmatchcase(r["id"].lower(), pat):
+            # agy's label too ("Orchestrator (Neon)"): a model whose id the docs do not give is wished for by its name.
+            if any(fnmatch.fnmatchcase(str(r.get(k) or "").lower(), pat) for k in ("family", "id", "label")):
                 agy_families.setdefault(r["family"], []).append(r)
             continue
         if not fnmatch.fnmatchcase(r["id"].lower(), pat):

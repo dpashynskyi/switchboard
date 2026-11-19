@@ -534,6 +534,9 @@
     "gemini-4-hydrogen-low": {
       "aa-intelligence": 27
     },
+    "gemini-4-neon-xhigh": {
+      "aa-intelligence": 61
+    },
     "gemini-4-carbon-high": {
       "aa-intelligence": 60,
       "minutes_per_task": 26.1

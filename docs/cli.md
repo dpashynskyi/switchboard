@@ -9,12 +9,13 @@ usage: ask.py [-h] [--role ROLE] [--tokens TOKENS] [--force] [--continue] [--thr
               [--effort {low,medium,high,xhigh,max,ultra}] [--agy ID | --ollama ID | --server NAME |
               --codex ID | --claude ID] [--file FILE] [--think] [--reasoning {file,live,show}]
               [--handoff [HANDOFF] | --handoff-back ID MODE | --reasoning-read [REASONING_READ] |
-              --reasoning-open [REASONING_OPEN]] [--deadline DEADLINE] [--ask {never,human}]
-              [--ask-timeout ASK_TIMEOUT] [--max-tokens MAX_TOKENS] [--answer VALUE [VALUE ...]] [--wait]
-              [--max-wait MAX_WAIT] [--keep KEEP] [--unload] [--preset [PRESET]] [--status]
-              [--scorecard [{judged,all}]] [--verbose] [--allow-never] [--list] [--refresh]
-              [--context CONTEXT] [--notes] [--context-here WORK|PERSONAL] [--init]
-              [--machine {personal,work,both}] [--work-domain WORK_DOMAIN] [--roles] [--yes] [--needs NEEDS]
+              --reasoning-open [REASONING_OPEN]] [--keep-thread] [--tidy] [--deadline DEADLINE]
+              [--ask {never,human}] [--ask-timeout ASK_TIMEOUT] [--max-tokens MAX_TOKENS]
+              [--answer VALUE [VALUE ...]] [--wait] [--max-wait MAX_WAIT] [--keep KEEP] [--unload]
+              [--preset [PRESET]] [--status] [--scorecard [{judged,all}]] [--verbose] [--allow-never]
+              [--list] [--models] [--refresh] [--context CONTEXT] [--notes] [--context-here WORK|PERSONAL]
+              [--init] [--machine {personal,work,both}] [--work-domain WORK_DOMAIN] [--roles] [--yes]
+              [--needs NEEDS]
               [name] [text ...]
 
 positional arguments:
@@ -24,7 +25,7 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --role ROLE           route by role: review, second-opinion, first-read, draft, index, writer, code-
-                        writer, analysis, hard, engine-writer (roles.json)
+                        writer, analysis, hard, plan-and-code, engine-writer (roles.json)
   --tokens TOKENS       override estimated billed tokens for pre-run fit and reservation
   --force               run an explicitly named model even if its estimate crosses the floor
   --continue            agy/Codex: carry on the last /ask conversation
@@ -43,6 +44,9 @@ options:
   --handoff-back ID MODE
   --reasoning-read [REASONING_READ]
   --reasoning-open [REASONING_OPEN]
+  --keep-thread         Codex: leave this call's thread in the Codex app's list (by default it is archived
+                        when the call ends)
+  --tidy                list the switchboard threads left in the Codex app's list; with --yes archive them
   --deadline DEADLINE   agent seconds; 0 disables (role budget in role mode, otherwise 1800)
   --ask {never,human}
   --ask-timeout ASK_TIMEOUT
@@ -61,7 +65,9 @@ options:
   --verbose             stream agy's steps one line each as they happen
   --allow-never         allow calling a model in roles.json's never list
   --list                provider -> account (label) -> model -> efforts, and what this context allows
-  --refresh             with --list: read the providers' live lists again, past their caches
+  --models              the model catalog: role rows the live lists do not have, new and gone models (exit 1
+                        if a row is missing)
+  --refresh             with --list or --models: read the providers' live lists again, past their caches
   --context CONTEXT     work or personal; over ASK_CONTEXT; anything else is work (the strict side)
   --notes               include model capabilities and recent writer verdicts in --list
   --context-here WORK|PERSONAL
@@ -74,7 +80,7 @@ options:
                         with --init: your employer's email domain (repeatable)
   --roles               propose the roles from this machine's models, show the change, write
                         ~/.config/ask/roles.json on a yes
-  --yes                 with --init or --roles: write without asking
+  --yes                 with --init or --roles: write without asking; with --tidy: archive
   --needs NEEDS         comma-separated needs: python, engine, big-files
 ```
 
@@ -84,7 +90,7 @@ options:
 usage: writer.py [-h] [--preset PRESET] [--cwd CWD] [--brief BRIEF] [--model MODEL] [--tokens TOKENS]
                  [--needs NEEDS] [--force] [--python PYTHON] [--add-dir ADD_DIR] [--continue CONVERSATION]
                  [--log LOG] [--engine] [--allow-never] [--role ROLE] [--max-tokens MAX_TOKENS]
-                 [--deadline DEADLINE] [--ask {human,never}] [--ask-timeout ASK_TIMEOUT]
+                 [--deadline DEADLINE] [--ask {human,never}] [--ask-timeout ASK_TIMEOUT] [--keep-thread]
                  [--todo-turns TODO_TURNS] [--answer VALUE [VALUE ...]] [--agy | --codex]
                  [--verdict ID VERDICT NOTE]
                  [text]
@@ -118,6 +124,8 @@ options:
   --ask {human,never}   broker approvals (default: human)
   --ask-timeout ASK_TIMEOUT
                         seconds to wait for a human (default: 600)
+  --keep-thread         Codex: leave the run's thread in the Codex app's list (by default it is archived
+                        when the run ends)
   --todo-turns TODO_TURNS
                         turns that send the writer back while its plan has open items (default: 3; 0
                         disables)

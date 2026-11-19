@@ -226,10 +226,17 @@ class AgyAdapter(Adapter):
         row = next((r for r in rows if r["family"] in (fam, model)), None) if ok else None
         return list(row["efforts"]) if row else []
 
+    def no_efforts(self, model):
+        """An id agy lists as it is, with no effort beside it (an Orchestrator: a planner and Hydrogen, no effort levels):
+        an effort asked for it is not added to the id."""
+        ok, rows = self.models()
+        row = next((r for r in rows if r["family"] == model), None) if ok else None
+        return bool(row) and not row["efforts"]
+
     def run(self, account, model, effort, prompt, carry_on=False, timeout_s=300, verbose=False, agy=None, legacy=False, **kw):
         """agy's effort is part of the id: an effort given picks the family's id at that effort."""
         import ask
-        if effort:
+        if effort and not self.no_efforts(model):
             fam, _ = split_agy_id(model)
             model = f"{fam}-{effort}"
         if not legacy:
@@ -350,7 +357,8 @@ class CodexAdapter(Adapter):
         if not legacy:
             return ask.ask_broker("codex", model, prompt, carry_on, effort=effort,
                                   home=self._home_env(account), verbose=verbose, **kw)
-        return ask.ask_codex(model, prompt, carry_on, timeout_s, effort=effort, home=self._home_env(account))
+        return ask.ask_codex(model, prompt, carry_on, timeout_s, effort=effort, home=self._home_env(account),
+                             keep_thread=kw.get("keep_thread", False))
 
 
 class OllamaAdapter(Adapter):

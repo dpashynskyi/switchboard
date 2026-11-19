@@ -175,6 +175,8 @@ def parser(legacy_agy=False):
         ap.add_argument("--legacy-cli", action="store_true", help=argparse.SUPPRESS)
         ap.add_argument("--ask", choices=("human", "never"), default="human", help="broker approvals (default: human)")
         ap.add_argument("--ask-timeout", type=float, default=600, help="seconds to wait for a human (default: 600)")
+        ap.add_argument("--keep-thread", action="store_true",
+                        help="Codex: leave the run's thread in the Codex app's list (by default it is archived when the run ends)")
         ap.add_argument("--todo-turns", type=int, default=3,
                         help="turns that send the writer back while its plan has open items (default: 3; 0 disables)")
         ap.add_argument("--answer", nargs="+", metavar="VALUE", help="<base> <option> [text]: answer a pending request")
@@ -215,6 +217,13 @@ def codex_sandbox_python_warning(python, executable=None, timeout_s=60):
     return (f"[Codex's Windows sandbox cannot start {python} ({why[-1][:160] if why else 'exit %d' % run.returncode}); "
             "grant CodexSandboxUsers read and execute on its folder (icacls ... /grant \"CodexSandboxUsers:(OI)(CI)RX\"), "
             "or the caller runs the tests.]")
+
+
+def codex_threads(cli, thread_ids, method, home=None):
+    """thread/archive or thread/unarchive through a short `codex app-server`; best effort."""
+    import broker
+    return broker.codex_threads([cli, "app-server"], [t for t in thread_ids if t], method,
+                                env=dict(os.environ, CODEX_HOME=home) if home else None)
 
 
 def build_codex_command(model, prompt, cwd, answer_path, conversation=None, add_dirs=(), executable=None, effort=None):
@@ -604,6 +613,10 @@ def main(argv=None, legacy_agy=False):
     cap, stopped, told = a.max_tokens, [], []
     expired = []
     codex_base = None
+    tidy_codex = not broker_mode and provider == "codex"
+    if tidy_codex and a.conversation:
+        # Runs archive their threads; the rollout must be back among the active sessions before it is read and resumed.
+        codex_threads(cmd[0], [a.conversation], "thread/unarchive", codex_home)
     if not broker_mode and provider == "codex" and a.conversation:
         codex_meter.read(a.conversation)  # a resumed thread's rollout already holds its earlier turns
         codex_base = codex_meter.total
@@ -657,6 +670,7 @@ def main(argv=None, legacy_agy=False):
                 driver = cls(cwd, model, base, progress, event, stop_tree, **opts, add_dirs=a.add_dir, python=python,
                              engine=a.engine, ask=a.ask, ask_timeout=a.ask_timeout, max_tokens=cap, command=cmd,
                              deadline=a.deadline or None, env=codex_env, todo_turns=a.todo_turns,
+                             keep_thread=a.keep_thread,
                              engine_markers=hooks.engine_markers(route.load_machine()),
                              billed=lambda tok: route.billed_tokens(tok, provider, pool=pname, rules=rules)["billed"])
                 reasoning_log = None
@@ -810,6 +824,9 @@ def main(argv=None, legacy_agy=False):
                               "usage": codex.tokens, "failed": codex.failed}
     finally:
         route.release_reservation(res_entry)
+        if tidy_codex and not a.keep_thread:
+            # codex exec has no archive of its own (the broker's driver archives as it closes).
+            codex_threads(cmd[0], [codex.conversation or a.conversation], "thread/archive", codex_home)
 
     if fallback:
         return main(list(sys.argv[1:] if argv is None else argv) + ["--legacy-cli"])
@@ -890,4 +907,6 @@ def main(argv=None, legacy_agy=False):
 
 
 if __name__ == "__main__":
+    import broker
+    broker.exit_on_signals()  # a cancelled caller's SIGTERM still stops the writer and archives its thread
     sys.exit(main())

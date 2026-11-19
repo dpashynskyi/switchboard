@@ -3,15 +3,16 @@
 Ask another model from Claude Code, verbatim. One router over **agy** (Antigravity CLI: Gemini, Claude and GPT on a Google
 quota), **Codex** (the ChatGPT plan), **Ollama** and any OpenAI-compatible local server (LM Studio, llama.cpp, vLLM, MLX, Jan,
 LocalAI), that knows each pool's weekly quota and pace and picks
-a model by **role**: `review`, `second-opinion`, `first-read`, `draft`, `index`, `writer`, `code-writer`, `analysis`, `hard`.
+a model by **role**: `review`, `second-opinion`, `first-read`, `draft`, `index`, `writer`, `code-writer`, `analysis`, `hard`, `plan-and-code`.
 
 | Part | What it does |
 |---|---|
 | `/ask` (`skills/ask`) | `ask.py <model> "question"` or `ask.py --role review --file diff "..."`. Roles are wishes (`{"family": "gemini-4-argon*", "effort": ">=high"}`) matched against the live model lists, so a new model version is taken without an edit. Skips a pool under its floor or burning faster than the week, prefers the quota that expires first, keeps local models off a busy GPU, keeps work tasks off personal accounts (`work`/`personal` context). |
-| writer broker (`tools/writer.py`, `tools/broker.py`) | runs an agy or Codex agent on a brief through `agy acp` / `codex app-server`, under a permission policy: its folders only, no push or commit, no secrets folders, everything else to a human. A turn that ends while the agent's own plan (its todo list) still has open items sends it back to them, up to `--todo-turns` times (default 3, `0` turns it off); a carry-on that closes nothing, a deadline, the token cap or a spent quota stop it sooner, and what is left open goes into the result. At the end of a run writer.py lists the comments the run added (`comments added`), those with a date, a round or a review first; it never blocks. |
+| writer broker (`tools/writer.py`, `tools/broker.py`) | runs an agy or Codex agent on a brief through `agy acp` / `codex app-server`, under a permission policy: its folders only, no push or commit, no secrets folders, everything else to a human. A turn that ends while the agent's own plan (its todo list) still has open items sends it back to them, up to `--todo-turns` times (default 3, `0` turns it off); a carry-on that closes nothing, a deadline, the token cap or a spent quota stop it sooner, and what is left open goes into the result. At the end of a run writer.py lists the comments the run added (`comments added`), those with a date, a round or a review first; it never blocks. Runs clean up after themselves: the agent's processes are stopped (on Ctrl-C, SIGTERM and SIGHUP too), agy's session is closed, and the Codex thread is archived so the Codex app's list holds only your own (`--keep-thread` leaves it; carrying it on brings it back; `ask.py --tidy` sweeps older ones). |
 | `/room` (`skills/room`, `tools/room.py`) | a superchat: several agents in one transcript, moderated by Claude. A group chat (`say`, everyone answers the user at once) or a council (`round`, members speak in turn and see each other; `propose` a plan or a split of roles; `vote` by `veto`, `majority`, `unanimous` or `arbiter`). Every turn is an `ask.py` call, so the router's rules hold; members only read. |
 | cloud sessions (`tools/cloud.py`) | hands a brief to a Claude Code cloud session (claude.ai/code): `cloud.py start --cwd <repo> --brief BRIEF.md` runs `claude --cloud` there, or `--routine trig_...` fires a scheduled task's API trigger (token from `CLAUDE_ROUTINE_TOKEN`); `cloud.py send <session> "..."` follows up, `cloud.py list` shows them. The context policy and the Claude floors hold, every start goes to the journal; the session works on its own branch, so what comes back is a branch or a pull request. |
 | `/limits` and the limits band | the week of every pool in one table, and a band above the prompt (a Claude Code mod), which also stores the Claude week after each turn, in the desktop app too. |
+| launcher row (`mods/launcher`) | above the limits band: a coloured button per provider the router finds here (Claude, agy, Codex, Ollama), a model from its list, and a button per client: the provider's CLI in a new terminal window (iTerm, else Terminal), Claude desktop (a new Code session on the folder, the app's own model: its link takes no model), Antigravity, the Codex app. `/launcher` hides or shows it. |
 
 ## Install (a minute)
 
@@ -51,6 +52,8 @@ speak English; `ASK_LANG=uk` switches them to Ukrainian.
 cd ~/switchboard/skills/ask && python3 -B -m unittest       # offline: every provider is a fake
 python3 -B ~/switchboard/tools/test_broker.py
 python3 -B ~/switchboard/mods/limits-band/test_band.py
+python3 -B ~/switchboard/mods/launcher/test_launch.py
+claude plugin test ~/switchboard                       # the mod's own tests (tests/*.test.tsx)
 ```
 
 You answer for the terms of your own subscriptions (Google, OpenAI, Anthropic): this tool only drives the CLIs you

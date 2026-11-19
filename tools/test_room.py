@@ -18,6 +18,12 @@ import room  # noqa: E402
 FAKE = textwrap.dedent('''
     import json, sys
     persona, prompt = sys.argv[1], sys.argv[-1]
+    if persona == "slow":
+        import os, signal, time
+        def tidy(*_):
+            open(os.environ["FLAKY_MARK"] + ".tidied", "w").close(); sys.exit(130)
+        signal.signal(signal.SIGTERM, tidy)
+        time.sleep(30)
     thread = "--thread" in sys.argv
     print("[conversation t-%s: carry on with --thread t-%s]" % (persona, persona), file=sys.stderr)
     if persona == "broken":
@@ -141,6 +147,12 @@ class RoomTests(unittest.TestCase):
             path = self.open_room("broken", "alpha")
             self.run_room("say", path, "hi")
         self.assertEqual(len(calls), 2)  # one each, no second try for the spent quota
+
+    @unittest.skipIf(os.name == "nt", "terminate() is a hard stop on Windows")
+    def test_a_member_out_of_time_gets_sigterm_to_clean_up(self):
+        answer, thread, error = room.call_member({"name": "slow", "ask": "slow"}, "hi", 1)
+        self.assertEqual((answer, thread, error), (None, None, "no answer in 1 s"))
+        self.assertTrue(os.path.exists(os.environ["FLAKY_MARK"] + ".tidied"))
 
     def test_cause_skips_ask_notes(self):
         self.assertEqual(room.cause("policy: denied git show\n[reasoning: /tmp/r.md]\n"), "policy: denied git show")

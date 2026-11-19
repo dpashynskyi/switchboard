@@ -1,0 +1,6 @@
+{"type": "thread.started", "thread_id": "writer-thread"}
+{"type": "item.started", "item": {"id": "cmd", "type": "command_execution", "command": "inspect", "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "cmd", "type": "command_execution", "command": "inspect", "exit_code": 0, "status": "completed"}}
+{"type": "item.completed", "item": {"type": "file_change", "changes": [{"path": "one.py", "kind": "update"}, {"path": "two.py", "kind": "add"}]}}
+{"type": "item.completed", "item": {"type": "agent_message", "text": "streamed answer"}}
+{"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 40, "output_tokens": 20, "reasoning_output_tokens": 10}}
