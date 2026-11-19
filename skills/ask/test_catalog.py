@@ -63,7 +63,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_an_effort_the_list_lacks_says_which_efforts_it_has(self):
         report = catalog.check(fake=state(agy=["gemini-4-neon-low"]), rules=self.rules, now=1000)
-        line = next(m for m in report["missing"] if m["what"] == "gemini-4-neon* at effort >=high")
+        line = next(m for m in report["missing"] if m["what"] == "gemini-4-neon* at effort high..xhigh")
         self.assertIn("listed only at other efforts (gemini-4-neon-low)", line["why"])
 
     def test_a_list_not_read_decides_nothing(self):
@@ -166,7 +166,7 @@ class CatalogTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()) as out:
             code = catalog.main(["--refresh"], fake=state(agy=ARGON))
         self.assertEqual(code, 1)
-        self.assertIn("gemini-4-neon* at effort >=high: no id in the live lists of", out.getvalue())
+        self.assertIn("gemini-4-neon* at effort high..xhigh: no id in the live lists of", out.getvalue())
         self.assertIn("review", out.getvalue())
         again = catalog.check(fake=state(agy=ARGON), rules=self.rules)
         self.assertEqual(again["unseen_missing"], [])

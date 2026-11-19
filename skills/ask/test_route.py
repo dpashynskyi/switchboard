@@ -2177,7 +2177,8 @@ class ProviderTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
             for role in ("review", "writer", "code-writer", "analysis", "hard"):
                 res = route.pick(role, fake=st)
-                self.assertEqual((res["provider"], res["model"]), ("agy", "gemini-4-neon-high"), (role, res["message"]))
+                # One step above high where agy has it (the owner, 19 November 2026: other providers think harder).
+                self.assertEqual((res["provider"], res["model"]), ("agy", "gemini-4-neon-xhigh"), (role, res["message"]))
             st["agy_models"].append("gemini-4-carbon-high")
             res = route.pick("hard", fake=st)
             self.assertEqual(res["model"], "gemini-4-carbon-high", res["message"])
@@ -2233,7 +2234,7 @@ class ProviderTests(unittest.TestCase):
                 res = route.pick(role, fake=st)
                 self.assertTrue(res["model"].startswith("gemini-4-hydrogen-"), (role, res["message"]))
             res = route.pick("draft", fake=st)
-            self.assertEqual(res["model"], "gemini-4-hydrogen-low", res["message"])
+            self.assertEqual(res["model"], "gemini-4-hydrogen-medium", res["message"])
             st["agy_models"] = ["gemini-3.8-flash-low", "gemini-3.8-flash-high"]
             res = route.pick("draft", fake=st)
             self.assertEqual(res["model"], "gemini-3.8-flash-low", res["message"])
@@ -3075,6 +3076,38 @@ class WishTests(unittest.TestCase):
         res = route.pick("r", fake=self.state(), rules=rules)
         self.assertEqual(res["picked"], "gemini-3.8-flash-high")
         self.assertIn("gpt-6.1*: no model on this machine matches at effort >=max", res["passed_over"])
+
+    def test_an_effort_range_takes_the_strongest_inside_it(self):
+        # 'high..xhigh': xhigh where the model has it, high where it stops there, never below high.
+        rules = self.rules({"prefer": [{"family": "gemini-4-argon*", "effort": "high..xhigh"}]})
+        self.assertEqual(route.pick("r", fake=self.state(), rules=rules)["picked"], "gemini-4-argon-xhigh")
+        st = self.state(agy=["gemini-4-argon-low", "gemini-4-argon-high"])
+        self.assertEqual(route.pick("r", fake=st, rules=rules)["picked"], "gemini-4-argon-high")
+        rules = self.rules({"prefer": [{"family": "gemini-4-argon*", "effort": "high..xhigh"}, {"family": "gpt-6.1*"}]})
+        res = route.pick("r", fake=self.state(agy=["gemini-4-argon-low"]), rules=rules)
+        self.assertEqual(res["picked"], "gpt-6.1-sol")
+        self.assertIn("gemini-4-argon*: no model on this machine matches at effort high..xhigh", res["passed_over"])
+        rules = self.rules({"prefer": [{"family": "gpt-6.1*", "effort": "medium..high"}]})
+        res = route.pick("r", fake=self.state(), rules=rules)
+        self.assertEqual((res["picked"], res["effort"]), ("gpt-6.1-sol", "high"))
+        self.assertEqual(route.parse_effort_wish("high..xhigh"), ("..", "xhigh", "high"))
+        for bad in ("xhigh..high", "high..huge"):
+            with self.assertRaises(ValueError):
+                route.parse_effort_wish(bad)
+
+    def test_shipped_roles_take_claude_through_agy_before_the_subscription(self):
+        # The owner, 19 November 2026: agy's Claude pool goes unused; a role that ends on a Claude subagent asks agy first.
+        st = self.state(agy=["claude-opus-5-5-high", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high"], codex=[])
+        with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
+            for role, model in (("writer", "claude-sonnet-5-5-high"), ("code-writer", "claude-sonnet-5-5-high"),
+                                ("analysis", "claude-sonnet-5-5-high"), ("hard", "claude-opus-5-5-high"),
+                                ("plan-and-code", "claude-sonnet-5-5-high")):
+                res = route.pick(role, fake=st)
+                self.assertEqual((res["provider"], res["model"]), ("agy", model), (role, res["message"]))
+            st["agy_models"] = []
+            for role in ("writer", "analysis", "hard", "plan-and-code"):
+                res = route.pick(role, fake=st)
+                self.assertEqual(res["provider"], "claude-subscription", (role, res["message"]))
 
     def test_a_provider_not_on_this_machine_is_skipped_with_a_note(self):
         rules = self.rules({"prefer": [{"family": "gemini-4-argon*", "provider": "agy", "effort": ">=high"},

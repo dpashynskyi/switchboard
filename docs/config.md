@@ -45,7 +45,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 
 | Key | What it does |
 |---|---|
-| `prefer` | the rows in order. A row wishes for a model: `{"family": "gemini-4-argon*", "effort": ">=high", "provider": "agy"}` (`family` a glob over the ids of `--list`; `effort` `>=x` the cheapest at or above, `<=x` the strongest at or below, `x` exactly; `provider` optional). Or it names one: `{"provider": "agy", "model": "gemini-4-argon-high"}`. Or a group of equally fit ones: `{"any": [row, row], "effort": ">=high"}` (the quota that expires first goes first) |
+| `prefer` | the rows in order. A row wishes for a model: `{"family": "gemini-4-argon*", "effort": ">=high", "provider": "agy"}` (`family` a glob over the ids of `--list`; `effort` `>=x` the cheapest at or above, `<=x` the strongest at or below, `x..y` the strongest from x up to y (`high..xhigh`: xhigh where the model has it, else high), `x` exactly; `provider` optional). Or it names one: `{"provider": "agy", "model": "gemini-4-argon-high"}`. Or a group of equally fit ones: `{"any": [row, row], "effort": ">=high"}` (the quota that expires first goes first) |
 | `models`, `names` | older spellings of `prefer`, read the same way |
 | `needs` | what the work needs: `python`, `engine`, `big-files`; a model that `traits` says cannot is passed over |
 | `local_only` | never the cloud: waits for the GPU; a machine with no local provider ends at once (exit 8) |

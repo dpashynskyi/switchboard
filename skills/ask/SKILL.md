@@ -61,7 +61,7 @@ A role row names a model (`{"provider": "agy", "model": "gemini-4-argon-high"}`)
 `"prefer": [{"family": "gemini-4-argon*", "effort": ">=high"}, {"family": "gpt-6.1*"}]`. A wish is matched against what
 this machine offers when the role is called: a new version under the glob is taken without an edit, a missing provider
 gives `[passed over: ... is not on this machine]`. `>=high` takes the cheapest effort at or above the bound, `<=medium` the
-strongest at or below it. Several matches of one row are equally fit. The order of the rows is the user's; within it the
+strongest at or below it, `high..xhigh` the strongest between the two. Several matches of one row are equally fit. The order of the rows is the user's; within it the
 router passes over what may not or should not go, and says why (`[passed over: ...]` on stderr).
 
 **The choice in a role**, in turn:
