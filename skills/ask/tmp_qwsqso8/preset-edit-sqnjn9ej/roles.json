@@ -1,0 +1,9 @@
+{
+  "presets": {
+    "thrifty": {
+      "time": 0.25,
+      "cost": 1.5,
+      "quality": 2.0
+    }
+  }
+}

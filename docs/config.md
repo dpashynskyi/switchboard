@@ -97,6 +97,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `SWITCHBOARD_ROOT` | where the plugin lies, for the band (default `~/switchboard`) |
 | `CODEX_HOME` | Codex's active account folder; another account the policy picks runs with its own |
 | `CLAUDE_CONFIG_DIR` | the Claude Code profile, shown by `--list` |
+| `ANTHROPIC_API_KEY` | when set, the model catalog also reads Anthropic's model list (`GET /v1/models`, cached a day) to check `subscription_models` and say new Claude models; unset, nothing is asked |
 | `LOCALAPPDATA` | where Windows keeps agy and Codex |
 | `NO_COLOR`, `FORCE_COLOR` | colour off or on |
 | `BROKER_FAKE_SCRIPT` | the fake agent's script, in the broker's tests |
@@ -105,5 +106,6 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 
 All under `~/.cache/ask/`: `usage.jsonl` (the journal, a row a call), `logs/` (raw output), `reasoning/` (reasoning
 summaries), `reservations.json` (running calls' quota shares), `pool_history.json` (eight days of weekly remaining shares), `claude_usage.json`, the providers' model and usage caches
-(`agy_models.json`, `codex_models.json`, ...), `local.lock` (the GPU lock), `ask_last_conversation.json` (for
+(`agy_models.json`, `codex_models.json`, `anthropic_models.json`, ...), `model_catalog.json` (the model catalog: every
+provider's last live list, when each id was first seen or went, what `--models` was last looked at), `local.lock` (the GPU lock), `ask_last_conversation.json` (for
 `--continue`), `handoff/`.

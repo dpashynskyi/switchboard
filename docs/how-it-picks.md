@@ -6,6 +6,9 @@ that may go and should go. Every model passed over is said on stderr as `[passed
 1. **Wishes become ids.** A row `{"family": "gemini-4-argon*", "effort": ">=high"}` is matched against what this machine
    offers right now (each provider's live list, each Codex account's own). Several matches of one row are equally fit;
    the newest version comes first. No match: `... is not on this machine` or `no model on this machine matches`.
+   Such a row is also said before any call: the model catalog (`skills/ask/catalog.py`) compares every role row with
+   the providers' live lists at most hourly, and the limits band, `--list` and `ask.py --models` say a wish or an id no
+   list has, and the models a provider started (or stopped) offering since the last look.
 2. **Experience moves rows.** Writer verdicts (`writer.py --verdict`), capped runs and timeouts of the last 30 days,
    started from public benchmarks, move a row up or down by at most two places (`experience` in `roles.json`) and say
    so. This is the order every step below works in; `pinned` and `local_only` roles, `any` groups and subscription

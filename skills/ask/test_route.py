@@ -2169,6 +2169,23 @@ class ProviderTests(unittest.TestCase):
             res = route.pick("hard", fake=st)
             self.assertEqual((res["provider"], res["model"]), ("claude-subscription", "claude-fable-5-2"), res["message"])
 
+    def test_argon_roles_take_neon_when_agy_offers_it(self):
+        # Gemini 4 Neon replaces Argon on paid Antigravity plans; hard keeps Carbon first, Neon next.
+        st = self.state()
+        st["agy_models"] = ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-neon-xhigh",
+                            "gemini-4-argon-high", "gemini-4-hydrogen-high", "gemini-3.8-flash-high"]
+        with mock.patch.dict(os.environ, {"ASK_ROLES": route.ROLES_PATH, "ASK_CONTEXT": "personal"}):
+            for role in ("review", "writer", "code-writer", "analysis", "hard"):
+                res = route.pick(role, fake=st)
+                self.assertEqual((res["provider"], res["model"]), ("agy", "gemini-4-neon-high"), (role, res["message"]))
+            st["agy_models"].append("gemini-4-carbon-high")
+            res = route.pick("hard", fake=st)
+            self.assertEqual(res["model"], "gemini-4-carbon-high", res["message"])
+            # A free account without Neon: Argon (or GPT-6.1) as before.
+            st["agy_models"] = ["gemini-4-argon-high", "gemini-3.8-flash-high"]
+            res = route.pick("review", fake=st)
+            self.assertIn(res["model"], ("gemini-4-argon-high", "gpt-6.1-sol"), res["message"])
+
     def test_flash_roles_take_hydrogen_when_agy_offers_it(self):
         # Gemini 4 Hydrogen replaces 3.8 Flash, but only on paid Antigravity plans: Flash stays as the fallback.
         st = self.state()

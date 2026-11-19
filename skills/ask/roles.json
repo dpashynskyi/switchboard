@@ -17,6 +17,10 @@
     "review": {
       "prefer": [
         {
+          "family": "gemini-4-neon*",
+          "effort": ">=high"
+        },
+        {
           "any": [
             {
               "family": "gemini-4-argon*"
@@ -66,6 +70,10 @@
               "effort": ">=medium"
             }
           ]
+        },
+        {
+          "family": "gemini-4-neon*",
+          "effort": ">=high"
         },
         {
           "family": "gemini-4-argon*",
@@ -149,6 +157,10 @@
     "writer": {
       "prefer": [
         {
+          "family": "gemini-4-neon*",
+          "effort": ">=high"
+        },
+        {
           "any": [
             {
               "family": "gpt-6.1*"
@@ -184,6 +196,10 @@
     },
     "code-writer": {
       "prefer": [
+        {
+          "family": "gemini-4-neon*",
+          "effort": ">=high"
+        },
         {
           "any": [
             {
@@ -226,6 +242,10 @@
       ],
       "prefer": [
         {
+          "family": "gemini-4-neon*",
+          "effort": ">=high"
+        },
+        {
           "any": [
             {
               "family": "gpt-6.1*"
@@ -260,6 +280,10 @@
       "prefer": [
         {
           "family": "gemini-4-carbon*",
+          "effort": ">=high"
+        },
+        {
+          "family": "gemini-4-neon*",
           "effort": ">=high"
         },
         {

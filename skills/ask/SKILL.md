@@ -28,6 +28,7 @@ python3 ~/switchboard/skills/ask/ask.py --unload                                
 python3 ~/switchboard/skills/ask/ask.py --status                                    # context, policy, pools, reservations, GPU, journal
 python3 ~/switchboard/skills/ask/ask.py --context personal <model> "question"       # the context explicitly, over ASK_CONTEXT
 python3 ~/switchboard/skills/ask/ask.py --list [--refresh] [--notes]                # the inventory; live lists past the cache
+python3 ~/switchboard/skills/ask/ask.py --models [--refresh]                        # role rows no live list has; new and gone models
 python3 ~/switchboard/skills/ask/limits.py                                          # the week's limits as one table
 python3 ~/switchboard/skills/ask/dashboard.py                                       # a limits dashboard in the browser (127.0.0.1), presets at /presets
 python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name          # an image (agy's image-generator)
@@ -53,7 +54,7 @@ python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name      
 | `writer` | a writer agent on a brief (`tools/writer.py`) | cloud models, then a Claude subagent (exit 6) |
 | `code-writer` | a patch without a build engine | `no_engine`: `--engine` is refused |
 | `analysis` | reading code and records into a findings file | `no_engine` |
-| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then GPT-6.1 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
+| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then Gemini 4 Neon, then GPT-6.1 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
 
 A role row names a model (`{"provider": "agy", "model": "gemini-4-argon-high"}`) or wishes for one:
 `"prefer": [{"family": "gemini-4-argon*", "effort": ">=high"}, {"family": "gpt-6.1*"}]`. A wish is matched against what

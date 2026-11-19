@@ -13,8 +13,9 @@ usage: ask.py [-h] [--role ROLE] [--tokens TOKENS] [--force] [--continue] [--thr
               [--ask {never,human}] [--ask-timeout ASK_TIMEOUT] [--max-tokens MAX_TOKENS]
               [--answer VALUE [VALUE ...]] [--wait] [--max-wait MAX_WAIT] [--keep KEEP] [--unload]
               [--preset [PRESET]] [--status] [--scorecard [{judged,all}]] [--verbose] [--allow-never]
-              [--list] [--refresh] [--context CONTEXT] [--notes] [--context-here WORK|PERSONAL] [--init]
-              [--machine {personal,work,both}] [--work-domain WORK_DOMAIN] [--roles] [--yes] [--needs NEEDS]
+              [--list] [--models] [--refresh] [--context CONTEXT] [--notes] [--context-here WORK|PERSONAL]
+              [--init] [--machine {personal,work,both}] [--work-domain WORK_DOMAIN] [--roles] [--yes]
+              [--needs NEEDS]
               [name] [text ...]
 
 positional arguments:
@@ -64,7 +65,9 @@ options:
   --verbose             stream agy's steps one line each as they happen
   --allow-never         allow calling a model in roles.json's never list
   --list                provider -> account (label) -> model -> efforts, and what this context allows
-  --refresh             with --list: read the providers' live lists again, past their caches
+  --models              the model catalog: role rows the live lists do not have, new and gone models (exit 1
+                        if a row is missing)
+  --refresh             with --list or --models: read the providers' live lists again, past their caches
   --context CONTEXT     work or personal; over ASK_CONTEXT; anything else is work (the strict side)
   --notes               include model capabilities and recent writer verdicts in --list
   --context-here WORK|PERSONAL

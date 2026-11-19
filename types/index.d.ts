@@ -25,8 +25,25 @@ export type BandData = {
   sessions: BandSessions | null
 }
 
+/** A provider the launcher row offers (mods/launcher/launch.py list): its models in the router's order. */
+export type LaunchProvider = {
+  id: string
+  label: string
+  color: string
+  models: string[]
+  clients: { id: string; label: string }[]
+}
+
+/** What the launcher row has picked: the provider whose clients show, and its model. */
+export type LaunchPick = { provider: string; model: string }
+
 declare module 'claude-code' {
   interface PluginState {
-    'switchboard': { data: Shaped<BandData | null>; isHidden: boolean; error: string | null }
+    'switchboard': { data: Shaped<BandData | null>; isHidden: boolean; error: string | null
+      launch: Shaped<LaunchProvider[] | null>
+      launchPick: LaunchPick | null
+      launchNote: string | null
+      isLauncherHidden: boolean
+    }
   }
 }

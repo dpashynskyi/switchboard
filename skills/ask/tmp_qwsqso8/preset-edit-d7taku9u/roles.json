@@ -1,0 +1,9 @@
+{
+  "presets": {
+    "fast": {
+      "time": 1.5,
+      "cost": 0.4,
+      "quality": 1.5
+    }
+  }
+}

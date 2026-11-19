@@ -4,7 +4,8 @@ the Claude numbers (the mod `limits-band` runs it once a minute).
     python ~/switchboard/mods/limits-band/band.py [--session <the CLI session id>] [--text]
 
 Reads only local files and the router's cloud_state (agy's /usage and Codex's rate limits, both quota reads, no
-model call; cached here for TTL_S so that a band in several sessions asks them at most every few minutes). The
+model call; cached here for TTL_S so that a band in several sessions asks them at most every few minutes), and the
+model catalog (skills/ask/catalog.py: the providers' model lists, read again at most hourly). The
 sessions come from the desktop app's own session files: the family of the given session (its root and everyone
 spawned under it, archived ones left out).
 """
@@ -205,6 +206,13 @@ def build(cli_id=None):
     except Exception as e:
         out["pools"], out["claude"] = [], {"status": "missing", "age_s": None}
         out["errors"].append("cloud_state: " + str(e)[:80])
+    try:
+        # The model catalog, read again at most hourly (each provider's list keeps its own day-long cache): a role row
+        # the live lists do not have, and new models, until the user looks with ask.py --models.
+        import catalog
+        out["errors"] += catalog.band_notes(catalog.check(rules=rules))
+    except Exception as e:
+        out["errors"].append("catalog: " + str(e)[:80])
     try:
         out["sessions"] = read_sessions(cli_id)
     except Exception as e:

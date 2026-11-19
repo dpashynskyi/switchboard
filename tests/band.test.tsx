@@ -30,12 +30,13 @@ type Runs = { count: number; calls?: { argv: readonly string[]; stdin?: string }
 
 function engine(on: Parameters<Parameters<typeof test>[1]>[1], stdout: string, exitCode = 0, runs: Runs = { count: 0 }) {
   const clock = mock.clock(on)
-  mock.store(on)
+  // The launcher row above the band has its own tests (launcher.test.tsx): hidden here.
+  mock.store(on, { isLauncherHidden: true })
   mock.env(on, { USERPROFILE: 'C:/Users/someone', ASK_LANG: 'uk' })
   on('command.register', () => ({ value: { command: 'limits-band' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'cli-1' }))
-  on('process.run', (_, e) => (runs.count++, runs.calls?.push({ argv: e.argv, stdin: e.init?.stdin }), {
+  on('process.run', (_, e) => (e.argv.some(a => a.endsWith('launch.py')) || runs.count++, runs.calls?.push({ argv: e.argv, stdin: e.init?.stdin }), {
     value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
 
