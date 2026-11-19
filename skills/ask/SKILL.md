@@ -1,6 +1,6 @@
 ---
 name: ask
-description: Pass a question (or an image request, "draw") to another model word for word and bring its answer back word for word - Gemini, Claude and GPT models through the Antigravity CLI (agy, a Google quota), GPT through Codex (a ChatGPT plan), local models through Ollama; or by role (review, second-opinion, first-read, draft, index, writer, code-writer, analysis, hard) and the router picks the model by quota, pace, experience and the GPU. Use on /ask, "ask gemini", "what would gpt say", or when you offer a second opinion and the user agrees.
+description: Pass a question (or an image request, "draw") to another model word for word and bring its answer back word for word - Gemini, Claude and GPT models through the Antigravity CLI (agy, a Google quota), GPT through Codex (a ChatGPT plan), local models through Ollama; or by role (review, second-opinion, first-read, draft, index, writer, code-writer, analysis, hard, plan-and-code) and the router picks the model by quota, pace, experience and the GPU. Use on /ask, "ask gemini", "what would gpt say", or when you offer a second opinion and the user agrees.
 ---
 
 # /ask: ask another model
@@ -55,6 +55,7 @@ python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name      
 | `code-writer` | a patch without a build engine | `no_engine`: `--engine` is refused |
 | `analysis` | reading code and records into a findings file | `no_engine` |
 | `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then Gemini 4 Neon, then GPT-6.1 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
+| `plan-and-code` | plan a change and make it, tests run: `tools/writer.py --role plan-and-code` | Antigravity's Orchestrator first: a planner (Neon, then Carbon on Ultra, then Argon) explores the code and plans, Gemini 4 Hydrogen makes the change and runs the tests, the planner plans again when Hydrogen is stuck; no effort levels (`--effort` is not added to its id). Matched by the name agy gives it (`Orchestrator (Neon)`) when its id says no more. No Orchestrator: Gemini 4 Neon, then GPT-6.1 or Argon, then a Claude Sonnet subagent (exit 6) |
 
 A role row names a model (`{"provider": "agy", "model": "gemini-4-argon-high"}`) or wishes for one:
 `"prefer": [{"family": "gemini-4-argon*", "effort": ">=high"}, {"family": "gpt-6.1*"}]`. A wish is matched against what
@@ -105,7 +106,7 @@ router passes over what may not or should not go, and says why (`[passed over: .
 - **The Claude subscription's limits** no script can read: the session reads them with the app's `get_usage` and writes `~/.cache/ask/claude_usage.json` (`/limits`).
 
 ## Writers (`tools/writer.py`)
-- Name the kind of work, not the model: `python3 ~/switchboard/tools/writer.py --cwd <folder> --brief BRIEF.md [--role writer|code-writer|analysis]`, with the same choice, reservation, journal and verdicts as `/ask`. `--model <id>` with `--agy`/`--codex`, `--continue <conversation>` (with `--model`), `--add-dir`, `--needs`, `--max-tokens N` (a hard stop past N billed tokens: exit 5), `--deadline` (3600 s by default, exit 9).
+- Name the kind of work, not the model: `python3 ~/switchboard/tools/writer.py --cwd <folder> --brief BRIEF.md [--role writer|code-writer|analysis|plan-and-code]`, with the same choice, reservation, journal and verdicts as `/ask`. `--model <id>` with `--agy`/`--codex`, `--continue <conversation>` (with `--model`), `--add-dir`, `--needs`, `--max-tokens N` (a hard stop past N billed tokens: exit 5), `--deadline` (3600 s by default, exit 9).
 - The broker's policy allows reading and writing in the run's folders and the writer's exact command; refuses git push and commit, killing processes, secrets folders; everything else goes to a human (`--ask human`, answered with `writer.py --answer <log> <option id> [text]`). Logs are redacted.
 - Codex writes with `-s workspace-write` anywhere in `--cwd`: give it its own copy of the repository (a git worktree) when other uncommitted work is near.
 - After every writer, record a verdict: `python3 ~/switchboard/tools/writer.py --verdict <conversation> ok|fixed|rejected "what it was"`; verdicts move models within `experience`.

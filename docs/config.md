@@ -67,7 +67,7 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `never` | ids or globs never called (`--allow-never` overrides), `never_reason` says why |
 | `floors` | `{"weekly": 0.1, "5h": 0.1}`: a pool window below this share left is not used |
 | `pace_skip` | a weekly pace above this (x the week) passes the pool over while a calmer one comes later |
-| `pool_covers` | `{"Gemini Models": ["gemini-*"], ...}`: which model ids a quota pool covers |
+| `pool_covers` | `{"Gemini Models": ["gemini-*", "*orchestrator*"], ...}`: which model ids a quota pool covers (an Orchestrator spends the Gemini pool) |
 | `tokens_default` | billed tokens a call of each role is guessed at before its own runs are known |
 | `cache_weight` | how much a cached token counts in a pool, by pool |
 | `rate_default` | a pool window's share per 1M billed tokens until enough runs teach it |

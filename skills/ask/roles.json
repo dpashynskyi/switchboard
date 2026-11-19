@@ -320,6 +320,53 @@
         "aa_time_scale": 1.0
       }
     },
+    "plan-and-code": {
+      "prefer": [
+        {
+          "family": "*orchestrator*neon*",
+          "provider": "agy"
+        },
+        {
+          "family": "*orchestrator*carbon*",
+          "provider": "agy"
+        },
+        {
+          "family": "*orchestrator*argon*",
+          "provider": "agy"
+        },
+        {
+          "family": "gemini-4-neon*",
+          "effort": ">=high"
+        },
+        {
+          "any": [
+            {
+              "family": "gpt-6.1*"
+            },
+            {
+              "family": "gemini-4-argon*"
+            }
+          ],
+          "effort": ">=high"
+        },
+        {
+          "family": "claude-sonnet*",
+          "provider": "claude-subscription"
+        }
+      ],
+      "exit_code": 6,
+      "score": {
+        "mode": "shadow",
+        "metrics": [
+          "aa-coding-agent",
+          "benchlm-coding"
+        ],
+        "time": 0.2,
+        "cost": 0.5,
+        "time_budget_s": 3600,
+        "aa_time_scale": 1.0
+      }
+    },
     "index": {
       "local_only": true,
       "prefer": [
@@ -424,7 +471,8 @@
   },
   "pool_covers": {
     "Gemini Models": [
-      "gemini-*"
+      "gemini-*",
+      "*orchestrator*"
     ],
     "ChatGPT": [
       "gpt-6*",
