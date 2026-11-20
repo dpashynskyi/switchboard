@@ -6,6 +6,8 @@ import type { BandData, BandPool, LaunchProvider } from '../types'
 // The band above the prompt: the week's pools (from the router, through band.py) and the linked sessions.
 // It reads local files and runs one local script, once a minute; it calls no model.
 const data = atom({ plugin: 'switchboard', key: 'data' } as const, null, { shape: 'band-3' })
+// /limits-band hides the whole band, the launcher row with it: hiding the quota line alone left the launcher row
+// standing where the band was, and the band seemed not to go. /launcher hides the launcher row alone.
 const isHidden = atom({ plugin: 'switchboard', key: 'isHidden' } as const, false)
 // The quota table open above the band's line: one toggle at the line's right end (remembered).
 const isBandOpen = atom({ plugin: 'switchboard', key: 'isBandOpen' } as const, false)
@@ -23,8 +25,8 @@ const WORDS = {
   uk: {
     d: 'д', h: 'год', min: 'хв', decimal: ',', skip: '❌ роутер обходить: ', burns: '⚠️ згорить першим',
     pace: '⚠️ витрачається швидко: роутер бере спокійніший', stale: '⚠️ цифри застарілі', code: 'код',
-    command: 'Сховати чи показати смугу квот і сесій над полем вводу (запам\'ятовується)',
-    hidden: 'Смугу квот сховано.', shown: 'Смугу квот показано.', reading: 'Квоти: читаю…',
+    command: 'Сховати чи показати смугу над полем вводу: квоти, сесії й рядок запуску (запам\'ятовується)',
+    hidden: 'Смугу сховано: квоти й рядок запуску.', shown: 'Смугу квот показано.', reading: 'Квоти: читаю…',
     working: ['сесія працює', 'сесії працюють', 'сесій працюють'], idle: ['вільна', 'вільні', 'вільних'],
     claudeMissing: '⚠️ Claude: цифр немає', claudeOld: (age: string) => `⚠️ Claude: цифри ${age} тому`,
     heads: ['Провайдер', 'Модель', 'Лишилось', 'Скидання', 'Стан'], noQuotas: 'квот немає', updated: 'оновлено',
@@ -46,8 +48,8 @@ const WORDS = {
   en: {
     d: 'd', h: 'h', min: 'min', decimal: '.', skip: '❌ the router skips it: ', burns: '⚠️ burns first',
     pace: '⚠️ spent fast: the router takes a calmer one', stale: '⚠️ stale numbers', code: 'exit',
-    command: 'Hide or show the band of quotas and sessions above the prompt (remembered)',
-    hidden: 'The quota band is hidden.', shown: 'The quota band is shown.', reading: 'Quotas: reading…',
+    command: 'Hide or show the band above the prompt: quotas, sessions and the launcher row (remembered)',
+    hidden: 'The band is hidden: the quotas and the launcher row.', shown: 'The quota band is shown.', reading: 'Quotas: reading…',
     working: ['session working', 'sessions working', 'sessions working'], idle: ['idle', 'idle', 'idle'],
     claudeMissing: '⚠️ Claude: no numbers', claudeOld: (age: string) => `⚠️ Claude: numbers ${age} old`,
     heads: ['Provider', 'Model', 'Left', 'Resets', 'State'], noQuotas: 'no quotas', updated: 'updated',
@@ -311,10 +313,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
+    if (e.props.hasSurvey || (await read($, isHidden))) return next(e)
     const launcher = (await read($, isLauncherHidden)) ? null : await drawLauncher($, e)
-    const bandRow = (await read($, isHidden)) ? null : await drawBand($, e)
-    if (launcher === null && bandRow === null) return next(e)
+    const bandRow = await drawBand($, e)
     const { Box } = $.ui.resolve(e)
     const gap = e.surface === 'terminal' ? 0 : 'md'
     if (launcher === null) return <Box key="switchboard" flexDirection="column">{bandRow}</Box>

@@ -28,10 +28,11 @@ const SAMPLE = {
 
 type Runs = { count: number; calls?: { argv: readonly string[]; stdin?: string }[] }
 
-function engine(on: Parameters<Parameters<typeof test>[1]>[1], stdout: string, exitCode = 0, runs: Runs = { count: 0 }) {
+function engine(on: Parameters<Parameters<typeof test>[1]>[1], stdout: string, exitCode = 0, runs: Runs = { count: 0 },
+  stored: Record<string, unknown> = {}) {
   const clock = mock.clock(on)
   // The launcher row above the band has its own tests (launcher.test.tsx): off by default.
-  mock.store(on)
+  mock.store(on, stored)
   mock.env(on, { USERPROFILE: 'C:/Users/someone', ASK_LANG: 'uk' })
   on('command.register', () => ({ value: { command: 'limits-band' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -101,6 +102,40 @@ test('the command hides the band and shows it again', async ($, on) => {
 
   const shown = await $.command.run({ command: 'limits-band', args: '' })
   expect(JSON.stringify(shown)).toContain('показано')
+})
+
+test('the command hides the whole band on screen, the launcher row with it, and it stays hidden', async ($, on) => {
+  // The launcher row on (/launcher): hiding the quota line alone left it standing where the band was.
+  const clock = engine(on, JSON.stringify(SAMPLE), 0, { count: 0 }, { isLauncherOn: true })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+
+    return <Text>engine</Text>
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+
+  // The band is drawn first, as in the app; the command comes while it is on screen.
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /сесії/ }))?.text).toContain('Anthropic 14%')
+  expect((await ui.find({ type: 'Text', text: 'Нова сесія:' }))?.text).toBe('Нова сесія:')
+  const hidden = await $.command.run({ command: 'limits-band', args: '' })
+  expect(JSON.stringify(hidden)).toContain('сховано')
+  await clock.settle()
+  expect(await ui.find({ type: 'Text', text: /сесії/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Нова сесія:' })).toBeUndefined()
+  expect((await ui.find({ type: 'Text' }))?.text).toBe('engine')
+
+  // The minute's reading must not bring it back.
+  await clock.advance(60_000)
+  expect(await ui.find({ type: 'Text', text: /сесії/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Text' }))?.text).toBe('engine')
+
+  await $.command.run({ command: 'limits-band', args: '' })
+  await clock.settle()
+  expect((await ui.find({ type: 'Text', text: /сесії/ }))?.text).toContain('Anthropic 14%')
+  expect((await ui.find({ type: 'Text', text: 'Нова сесія:' }))?.text).toBe('Нова сесія:')
+  await ui.unmount()
 })
 
 test('a failed script is said in the band', async ($, on) => {
