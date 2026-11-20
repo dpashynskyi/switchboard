@@ -54,11 +54,11 @@ python3 ~/switchboard/skills/ask/ask.py draw "description" --out path/name      
 | `writer` | a writer agent on a brief (`tools/writer.py`) | cloud models, then a Claude subagent (exit 6) |
 | `code-writer` | a patch without a build engine | `no_engine`: `--engine` is refused |
 | `analysis` | reading code and records into a findings file | `no_engine` |
-| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then Gemini 4 Neon, then GPT-6.1 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
-| `plan-and-code` | plan a change and make it, tests run: `tools/writer.py --role plan-and-code` | Antigravity's Orchestrator first: a planner (Neon, then Carbon on Ultra, then Argon) explores the code and plans, Gemini 4 Hydrogen makes the change and runs the tests, the planner plans again when Hydrogen is stuck; no effort levels (`--effort` is not added to its id). Matched by the name agy gives it (`Orchestrator (Neon)`) when its id says no more. No Orchestrator: Gemini 4 Neon, then GPT-6.1 or Argon, then a Claude Sonnet subagent (exit 6) |
+| `hard` | a hard multi-step task: a tricky bug, a long agentic job, an open-ended investigation | Gemini 4 Carbon first (Google's strongest, Ultra in Antigravity, spends more tokens than Argon), then Gemini 4 Neon, then GPT-6.2 or Argon, then a Claude Fable subagent, then Opus (exit 6) |
+| `plan-and-code` | plan a change and make it, tests run: `tools/writer.py --role plan-and-code` | Antigravity's Orchestrator first: a planner (Neon, then Carbon on Ultra, then Argon) explores the code and plans, Gemini 4 Hydrogen makes the change and runs the tests, the planner plans again when Hydrogen is stuck; no effort levels (`--effort` is not added to its id). Matched by the name agy gives it (`Orchestrator (Neon)`) when its id says no more. No Orchestrator: Gemini 4 Neon, then GPT-6.2 or Argon, then a Claude Sonnet subagent (exit 6) |
 
 A role row names a model (`{"provider": "agy", "model": "gemini-4-argon-high"}`) or wishes for one:
-`"prefer": [{"family": "gemini-4-argon*", "effort": ">=high"}, {"family": "gpt-6.1*"}]`. A wish is matched against what
+`"prefer": [{"family": "gemini-4-argon*", "effort": ">=high"}, {"family": "gpt-6.2*"}]`. A wish is matched against what
 this machine offers when the role is called: a new version under the glob is taken without an edit, a missing provider
 gives `[passed over: ... is not on this machine]`. `>=high` takes the cheapest effort at or above the bound, `<=medium` the
 strongest at or below it, `high..xhigh` the strongest between the two. Several matches of one row are equally fit. The order of the rows is the user's; within it the
