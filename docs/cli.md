@@ -306,3 +306,18 @@ positional arguments:
 options:
   -h, --help         show this help message and exit
 ```
+
+## update
+
+```text
+usage: update.py [-h] [--every EVERY] [--force] [--repo REPO] [--dry-run]
+
+Fast-forward switchboard and the repositories it reads from to origin/main, when safe.
+
+options:
+  -h, --help     show this help message and exit
+  --every EVERY  seconds between checks (default 3600)
+  --force        check now, whatever the interval and the off switch say
+  --repo REPO    one more clone to update (repeatable)
+  --dry-run      fetch and say what would change; move nothing
+```

@@ -33,8 +33,21 @@ and everything under it work, wherever it lies. Work accounts are told apart by 
 (`--init` offers the ones it finds) or by name in `accounts`.
 
 Load it in Claude Code with `claude --plugin-dir ~/switchboard`, or for every session add
-`"env": {"CLAUDE_CODE_PLUGIN_DIRS": "/absolute/path/to/switchboard"}` to `~/.claude/settings.json`. The skills call
+`"env": {"CLAUDE_CODE_PLUGIN_DIRS": "/absolute/path/to/switchboard", "CLAUDE_CODE_PLUGIN_DIR_WATCH": "1"}` to
+`~/.claude/settings.json` (the second makes the desktop app pick up an update of the band without a new session). The skills call
 `~/switchboard/...`; cloned elsewhere, set `SWITCHBOARD_ROOT` for the band and edit the paths in the two `SKILL.md`.
+
+### Updates
+
+The band keeps the clone on the latest `main` by itself: at a session's start and then at most once an hour
+`tools/update.py` fetches and fast-forwards it, and the clones the router reads from (a `hooks` module's, the
+`roles.json` link's, any in machine.json `update.repos`), on macOS and Windows alike. A toast says what came. It moves
+a clone only when that is safe: on `main`, no local commits, no merge or rebase in progress, and no local edit in a
+file the update changes (edits elsewhere stay where they are and do not hold it back). Otherwise it leaves the clone
+and says why once. The scripts take the new code at their next call; the band itself reloads where the session
+watches the folder: a terminal session does, the desktop app does with `"CLAUDE_CODE_PLUGIN_DIR_WATCH": "1"` in the same
+`env` block, else from the next session. `/switchboard-update` checks now; `SWITCHBOARD_AUTOUPDATE=0` or machine.json
+`"update": {"auto": false}` turns it off.
 
 More: every flag in [docs/cli.md](docs/cli.md), every setting in [docs/config.md](docs/config.md), how a role picks
 its model in [docs/how-it-picks.md](docs/how-it-picks.md).
@@ -71,6 +84,7 @@ python3 -B mods/limits-band/test_band.py
 python3 -B tools/test_pii_sweep.py
 python3 -B tools/test_cloud.py
 python3 -B tools/test_agents.py
+python3 -B tools/test_update.py
 ```
 
 Run `python3 tools/pii_sweep.py --install-hook` once per clone. After changing any `--help`, run

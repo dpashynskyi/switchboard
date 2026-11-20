@@ -24,6 +24,7 @@ are sent to the configured URL. Other machine settings stay local.
 | `hardware` | `{"gpu": {"kind": "nvidia", "model_budget_gb": 12}}`: under `gpu`, `kind` and `model_budget_gb`. `kind`: `nvidia` (`nvidia-smi` says the free memory), `amd` (`rocm-smi` says it), `apple` or `unified` (local models get `model_budget_gb` of the memory less what Ollama holds: a Mac, an integrated GPU, a GPU no tool reads, or the CPU; unset: half the RAM, `0`: none), `none` (no local models). `device`: which card a model goes to (its index in `nvidia-smi` or `rocm-smi`; default: the one with the most free memory). On shared memory the budget is never more than the system has available now. A memory that cannot be read blocks local models; a kind guessed from a tool on PATH whose tool reads nothing tries the other tool, then the budget | `apple` on macOS, else `nvidia` or `amd` when its tool is on PATH, else `unified` |
 | `local_servers` | OpenAI-compatible local servers, each a provider by its name: `{"lmstudio": {"url": "http://127.0.0.1:1234/v1"}}`. Per server: `url`; `models` (the ids to offer, and the names for ids that are file paths); `static` (one model fixed at the server's start, as llama.cpp and MLX); `size_gb` (a number, or `{model: number}`: turns on the VRAM check); `load_timeout_s` (a cold start's time, default 120, on top of the answer's); `api_key_env` (the variable that holds a key, sent as a bearer token, never logged). A name equal to a built-in provider or holding `:` is skipped | none |
 | `hooks` | `{"module": "~/path/my_hooks.py", ...}`: a Python file with what only this machine knows (a build engine, games); its functions are listed in `skills/ask/hooks.py`; the section's other keys are its settings. A module that fails to load blocks local models | none |
+| `update` | auto-update (`tools/update.py`, run by the band): `{"auto": false}` turns it off; `repos` lists more clones to keep on `main` beside this one and the ones found by themselves (the folder of the `hooks` module, the target of `~/.config/ask/roles.json` when it is a link); `copies` lists more files that stand as copies of a repository file (as `~/.config/ask/roles.json` on Windows without links): a copy that still holds the old version of a file the update changed gets the new one | on; this clone and the ones found |
 
 The context of a call, the first that is found: `--context`; `ASK_CONTEXT`; the nearest `.switchboard-context` file up
 from the folder (one word, `work` or `personal`; `ask.py --context-here work` writes it); `context_paths`; else `work`,
@@ -95,6 +96,8 @@ It shows each role before and after and writes on a yes. `ASK_ROLES` names one w
 | `ROOM_ASK_CMD` | the command a room runs for a member's turn instead of `python ask.py` (tests use a fake) |
 | `ASK_ROUTE_FAKE` | a fake machine state (JSON or a file) for tests: nothing outside is asked |
 | `SWITCHBOARD_ROOT` | where the plugin lies, for the band (default `~/switchboard`) |
+| `SWITCHBOARD_AUTOUPDATE` | `0` turns auto-update off (`/switchboard-update` still checks when asked) |
+| `CLAUDE_CODE_PLUGIN_DIR_WATCH` | Claude Code's own: `1` in the `env` of `~/.claude/settings.json` makes the desktop app reload the mod when its files change, so an update to the band itself needs no new session |
 | `CODEX_HOME` | Codex's active account folder; another account the policy picks runs with its own |
 | `CLAUDE_CONFIG_DIR` | the Claude Code profile, shown by `--list` |
 | `ANTHROPIC_API_KEY` | when set, the model catalog also reads Anthropic's model list (`GET /v1/models`, cached a day) to check `subscription_models` and say new Claude models; unset, nothing is asked |
@@ -108,4 +111,4 @@ All under `~/.cache/ask/`: `usage.jsonl` (the journal, a row a call), `logs/` (r
 summaries), `reservations.json` (running calls' quota shares), `pool_history.json` (eight days of weekly remaining shares), `claude_usage.json`, the providers' model and usage caches
 (`agy_models.json`, `codex_models.json`, `anthropic_models.json`, ...), `model_catalog.json` (the model catalog: every
 provider's last live list, when each id was first seen or went, what `--models` was last looked at), `local.lock` (the GPU lock), `ask_last_conversation.json` (for
-`--continue`), `handoff/`.
+`--continue`), `handoff/`, `update.json` (when auto-update last checked and what each clone came to) and `update.lock`.
