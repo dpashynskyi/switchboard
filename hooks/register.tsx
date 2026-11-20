@@ -14,7 +14,8 @@ const error = atom({ plugin: 'switchboard', key: 'error' } as const, null)
 const launch = atom({ plugin: 'switchboard', key: 'launch' } as const, null, { shape: 'launch-1' })
 const launchPick = atom({ plugin: 'switchboard', key: 'launchPick' } as const, null)
 const launchNote = atom({ plugin: 'switchboard', key: 'launchNote' } as const, null)
-const isLauncherHidden = atom({ plugin: 'switchboard', key: 'isLauncherHidden' } as const, false)
+// Off unless /launcher turned it on (remembered as isLauncherOn): the row is set aside for now.
+const isLauncherHidden = atom({ plugin: 'switchboard', key: 'isLauncherHidden' } as const, true)
 
 // The words a person reads, in the language ASK_LANG names (uk, en), as in skills/ask/limits.py.
 const DEFAULT_LANG: Lang = 'en'
@@ -178,12 +179,12 @@ export const register: Register = on => {
     const open = await $.store.get('isBandOpen')
     await update($, isBandOpen, () => open === true)
     await $.command.register({ name: 'launcher', description: w().launcherCommand })
-    const launcherStored = await $.store.get('isLauncherHidden')
-    await update($, isLauncherHidden, () => launcherStored === true)
+    const launcherOn = (await $.store.get('isLauncherOn')) === true
+    await update($, isLauncherHidden, () => !launcherOn)
     void refresh($)
     $.clock.every(REFRESH_MS, () => void refresh($))
-    void listProviders($)
-    $.clock.every(LAUNCH_REFRESH_MS, () => void listProviders($))
+    if (launcherOn) void listProviders($)
+    $.clock.every(LAUNCH_REFRESH_MS, () => void (async () => { if (!(await read($, isLauncherHidden))) await listProviders($) })())
 
     return next(e)
   })
@@ -208,7 +209,7 @@ export const register: Register = on => {
   on('command.run', { command: 'launcher' }, async $ => {
     const hidden = !(await read($, isLauncherHidden))
     await update($, isLauncherHidden, () => hidden)
-    await $.store.set('isLauncherHidden', hidden)
+    await $.store.set('isLauncherOn', !hidden)
     if (!hidden) void listProviders($)
 
     return { text: hidden ? w().launcherHidden : w().launcherShown }

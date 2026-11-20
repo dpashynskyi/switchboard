@@ -30,8 +30,8 @@ type Runs = { count: number; calls?: { argv: readonly string[]; stdin?: string }
 
 function engine(on: Parameters<Parameters<typeof test>[1]>[1], stdout: string, exitCode = 0, runs: Runs = { count: 0 }) {
   const clock = mock.clock(on)
-  // The launcher row above the band has its own tests (launcher.test.tsx): hidden here.
-  mock.store(on, { isLauncherHidden: true })
+  // The launcher row above the band has its own tests (launcher.test.tsx): off by default.
+  mock.store(on)
   mock.env(on, { USERPROFILE: 'C:/Users/someone', ASK_LANG: 'uk' })
   on('command.register', () => ({ value: { command: 'limits-band' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))

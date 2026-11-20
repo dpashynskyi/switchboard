@@ -27,7 +27,7 @@ const LIST = {
 test('the launcher row opens the picked provider and model in the pressed client, on every surface', async ($, on) => {
   const runs: string[][] = []
   const clock = mock.clock(on)
-  mock.store(on)
+  mock.store(on, { isLauncherOn: true })
   mock.env(on, { HOME: '/home' })
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('session.id', () => ({ value: 's1' }))
