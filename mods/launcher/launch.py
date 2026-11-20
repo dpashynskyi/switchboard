@@ -178,7 +178,7 @@ def main(argv=None):
     op.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     if a.verb == "list":
-        print(json.dumps({"providers": listing(a.lang)}, ensure_ascii=False))
+        print(json.dumps({"providers": listing(a.lang)}, ensure_ascii=True))
         return 0
     cwd = os.path.abspath(os.path.expanduser(a.cwd))
     if not os.path.isdir(cwd):

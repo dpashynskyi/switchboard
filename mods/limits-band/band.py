@@ -269,7 +269,7 @@ def main(argv=None):
     ap.add_argument("--text", action="store_true", help="print the band as text instead of JSON")
     a = ap.parse_args(argv)
     data = build(a.session)
-    print(text(data) if a.text else json.dumps(data, ensure_ascii=False))
+    print(text(data) if a.text else json.dumps(data, ensure_ascii=True))
     return 0
 
 
