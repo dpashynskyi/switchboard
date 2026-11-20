@@ -36,7 +36,7 @@ function engine(on: Parameters<Parameters<typeof test>[1]>[1], stdout: string, e
   on('command.register', () => ({ value: { command: 'limits-band' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'cli-1' }))
-  on('process.run', (_, e) => (e.argv.some(a => a.endsWith('launch.py')) || runs.count++, runs.calls?.push({ argv: e.argv, stdin: e.init?.stdin }), {
+  on('process.run', (_, e) => (e.argv.some(a => a.endsWith('launch.py') || a.endsWith('update.py')) || runs.count++, runs.calls?.push({ argv: e.argv, stdin: e.init?.stdin }), {
     value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
 
