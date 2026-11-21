@@ -1,6 +1,6 @@
 # Command line
 
-Every script's `--help` under Python 3.13; `python3 tools/cli_docs.py` rewrites this page.
+Every script's `--help` under Python 3.14; `python3 tools/cli_docs.py` rewrites this page.
 
 ## ask
 
@@ -96,14 +96,15 @@ usage: writer.py [-h] [--preset PRESET] [--cwd CWD] [--brief BRIEF] [--model MOD
                  [text]
 
 positional arguments:
-  text                  the message (with --continue), or added after the brief
+  text                  the message (with --continue: this or --brief <file>, not both), or added after the
+                        brief
 
 options:
   -h, --help            show this help message and exit
   --preset PRESET       active preset (weighted presets are shadow only)
   --cwd CWD             the folder the writer works in
   --brief BRIEF         the brief, a file the writer is told to read and follow
-  --model MODEL         model id; given again with --continue
+  --model MODEL         model id; with --continue, the journal's unless given
   --tokens TOKENS       override estimated billed tokens for pre-run fit and reservation
   --needs NEEDS         comma-separated needs: python, engine, big-files
   --force               run an explicitly named model even if its estimate crosses the floor

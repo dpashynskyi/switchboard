@@ -144,13 +144,24 @@ def _pool_summary_line(model, cs_after, provider="agy"):
     return f"[pool {pname}: {', '.join(win_parts)}]"
 
 
+def continued_run(conversation, provider=None, journal_path=None):
+    """The last writer run of a conversation in the journal ({model, provider, role}), or None; with provider given,
+    only that provider's runs."""
+    for row in reversed(route._read_journal_rows(journal_path=journal_path)):
+        if (row.get("conversation") == conversation and "type" not in row and row.get("script") == "writer.py"
+                and row.get("model") and row.get("provider") in ("agy", "codex")
+                and (provider is None or row.get("provider") == provider)):
+            return {"model": row["model"], "provider": row["provider"], "role": row.get("role")}
+    return None
+
+
 def parser(legacy_agy=False):
     ap = argparse.ArgumentParser()
     ap.add_argument("--preset", help="active preset (weighted presets are shadow only)")
     ap.add_argument("--cwd", required=legacy_agy, help="the folder the writer works in")
     ap.add_argument("--brief", help="the brief, a file the writer is told to read and follow")
-    ap.add_argument("--model", help=("agy model id (default: gemini-4-argon-high); given again with --continue"
-                                   if legacy_agy else "model id; given again with --continue"))
+    ap.add_argument("--model", help=("agy model id (default: gemini-4-argon-high); with --continue, the journal's unless given"
+                                   if legacy_agy else "model id; with --continue, the journal's unless given"))
     ap.add_argument("--tokens", type=int, default=None, help="override estimated billed tokens for pre-run fit and reservation")
     ap.add_argument("--needs", type=route.parse_needs, default=[], help="comma-separated needs: python, engine, big-files")
     ap.add_argument("--force", action="store_true", help="run an explicitly named model even if its estimate crosses the floor")
@@ -162,7 +173,7 @@ def parser(legacy_agy=False):
                                  else "where the JSON result goes (default: <cwd>/writer_last.json)"))
     ap.add_argument("--engine", action="store_true", help="the writer may build and run the engine, through the brief's scripts only")
     ap.add_argument("--allow-never", action="store_true", help="allow a model in roles.json's never list")
-    ap.add_argument("--role", default="writer",
+    ap.add_argument("--role", default=None,
                     help="the workload's role in roles.json (default: writer; analysis, engine-writer, ...)")
     ap.add_argument("--max-tokens", type=int, default=None,
                     help="hard stop: the writer is stopped once this run's billed tokens (fresh + cached x w) pass N; "
@@ -185,7 +196,8 @@ def parser(legacy_agy=False):
         providers.add_argument("--agy", dest="provider", action="store_const", const="agy", help="use agy for --model")
         providers.add_argument("--codex", dest="provider", action="store_const", const="codex", help="use Codex for --model")
         ap.add_argument("--verdict", nargs=3, metavar=("ID", "VERDICT", "NOTE"), help="record ok, fixed or rejected for a writer run")
-    ap.add_argument("text", nargs="?", default="", help="the message (with --continue), or added after the brief")
+    ap.add_argument("text", nargs="?", default="",
+                    help="the message (with --continue: this or --brief <file>, not both), or added after the brief")
     return ap
 
 
@@ -470,8 +482,28 @@ def main(argv=None, legacy_agy=False):
         return 0
     if not a.cwd:
         ap.error("--cwd is required for a writer run")
-    if a.conversation and not a.model:
-        sys.exit("--continue needs --model, the model the conversation began on")
+    if a.conversation:
+        # The message of a carried-on run is the next brief (--brief <file>) or text, never both and never neither: a brief
+        # given beside --continue was once dropped silently and the writer carried on with nothing (20 November 2026).
+        if a.brief and a.text:
+            ap.error("--continue takes its message as --brief <file> or as text, not both")
+        if not a.brief and not a.text.strip():
+            ap.error("--continue needs a message: --brief <file> (the next brief) or text")
+        if a.brief and not os.path.isfile(a.brief):
+            ap.error(f"--brief {a.brief}: no such file")
+        if not a.model:
+            # The model and provider the conversation ran on, from the journal, unless --model overrides.
+            run = continued_run(a.conversation, provider)
+            if run is None:
+                ap.error(f"conversation {a.conversation} has no writer run in the journal: give --model"
+                         + ("" if legacy_agy else " with --agy or --codex"))
+            a.model, provider = run["model"], run["provider"]
+            if a.role is None and run.get("role"):
+                a.role = run["role"]
+            print(route.dim(f"[continuing {a.conversation}: {provider} {a.model}, from the journal]",
+                            route.use_color(sys.stderr)), file=sys.stderr)
+    if a.role is None:
+        a.role = "writer"
     if provider and not a.model and not legacy_agy:
         ap.error(f"--{provider} needs --model")
     if not a.conversation and not a.brief and not legacy_agy:
@@ -565,7 +597,8 @@ def main(argv=None, legacy_agy=False):
     machine = machine_engine(a.engine)
     engine_rules = machine["engine"]
     if a.conversation:
-        prompt = a.text
+        prompt = (f"Your next brief is the file {os.path.abspath(a.brief)}. Read it first and follow it exactly."
+                  if a.brief else a.text)
         if provider == "codex":
             prompt += "\n\n" + CODEX_STANDING.format(folders=", ".join(dirs), engine=machine["codex"], python=python)
         elif broker_mode:

@@ -1402,11 +1402,67 @@ class WriterTests(unittest.TestCase):
                 self.assertIn("gpt-6.1-sol cannot engine here (traits in roles.json)", errors.getvalue())
                 self.assertEqual(check.call_args.kwargs["needs"], ["engine"])
                 launch.assert_not_called()
-        with mock.patch.object(route, "check_name") as check:
+        with mock.patch.object(route, "check_name") as check, \
+             mock.patch.object(route, "_read_journal_rows", return_value=[]), \
+             mock.patch.object(sys, "stderr", io.StringIO()) as errors:
             with self.assertRaises(SystemExit) as stopped:
-                writer.main(["--cwd", HERE, "--brief", "brief.md", "--continue", "thread"])
-            self.assertIn("--continue needs --model", str(stopped.exception.code))
+                writer.main(["--cwd", HERE, "--continue", "thread", "Carry on"])
+            self.assertEqual(stopped.exception.code, 2)
+            self.assertIn("conversation thread has no writer run in the journal", errors.getvalue())
             check.assert_not_called()
+
+    def test_writer_continue_takes_its_message_and_its_model(self):
+        """--continue: the message is --brief <file> or text (never both, never neither); the model, provider and role
+        come from the conversation's last writer run in the journal unless --model is given (20 November 2026: a brief
+        beside --continue was dropped silently, and a Codex writer could not be carried on without --model)."""
+        rows = [
+            {"script": "writer.py", "conversation": "thread", "provider": "agy", "model": "old-model", "role": "writer"},
+            {"script": "ask.py", "conversation": "thread", "provider": "codex", "model": "ask-model"},
+            {"script": "writer.py", "conversation": "thread", "provider": "codex", "model": "gpt-6-astra", "role": "analysis"},
+            {"script": "writer.py", "conversation": "thread", "type": "verdict", "provider": "codex", "model": "v"},
+            {"script": "writer.py", "conversation": "other", "provider": "agy", "model": "other-model", "role": "writer"},
+        ]
+        with mock.patch.object(route, "_read_journal_rows", return_value=rows):
+            self.assertEqual(writer.continued_run("thread"),
+                             {"model": "gpt-6-astra", "provider": "codex", "role": "analysis"})
+            self.assertEqual(writer.continued_run("thread", "agy"),
+                             {"model": "old-model", "provider": "agy", "role": "writer"})
+            self.assertIsNone(writer.continued_run("missing"))
+        with tempfile.TemporaryDirectory() as tmp:
+            brief = os.path.join(tmp, "next.md")
+            with open(brief, "w", encoding="utf-8") as f:
+                f.write("Fix the review's points.")
+            refused = {"ok": False, "status": "error", "reason": "stop here"}
+            cases = [
+                (["--continue", "thread", "--brief", brief, "Also this"], "not both"),
+                (["--continue", "thread"], "--continue needs a message"),
+                (["--continue", "thread", "   "], "--continue needs a message"),
+                (["--continue", "thread", "--brief", os.path.join(tmp, "absent.md")], "no such file"),
+            ]
+            for args, expected in cases:
+                with self.subTest(args=args), \
+                     mock.patch.object(route, "_read_journal_rows", return_value=rows), \
+                     mock.patch.object(route, "check_name", return_value=refused) as check, \
+                     mock.patch.object(sys, "stderr", io.StringIO()) as errors:
+                    with self.assertRaises(SystemExit) as stopped:
+                        writer.main(["--cwd", tmp] + args)
+                    self.assertEqual(stopped.exception.code, 2)
+                    self.assertIn(expected, errors.getvalue())
+                    check.assert_not_called()
+            # The model, provider and role from the journal reach the name check; --model overrides the journal.
+            for args, spec, role in [
+                (["--continue", "thread", "--brief", brief], {"provider": "codex", "model": "gpt-6-astra"}, "analysis"),
+                (["--continue", "thread", "Carry on", "--model", "m2", "--agy"], {"provider": "agy", "model": "m2"}, "writer"),
+            ]:
+                with self.subTest(args=args), \
+                     mock.patch.object(route, "_read_journal_rows", return_value=rows), \
+                     mock.patch.object(route, "check_name", return_value=refused) as check, \
+                     mock.patch.object(sys, "stderr", io.StringIO()):
+                    with self.assertRaises(SystemExit) as stopped:
+                        writer.main(["--cwd", tmp] + args)
+                    self.assertEqual(stopped.exception.code, 2)
+                    self.assertEqual(check.call_args.args[0], spec)
+                    self.assertEqual(check.call_args.kwargs["role"], role)
 
 
     def test_verdict_identity_refusal_manual_runs_and_cli(self):

@@ -364,7 +364,7 @@ class BrokerTests(unittest.TestCase):
                 with mock.patch.object(subprocess, "Popen", return_value=proc), \
                      mock.patch.object(writer, "stop_tree", side_effect=stop) as kill:
                     args = ["--cwd", self.cwd, "--model", "model", "--continue", "old",
-                            "--log", self.base + ".json", "--deadline", ".5"]
+                            "--log", self.base + ".json", "--deadline", ".5", "Carry on"]
                     if not legacy_agy:
                         args += ["--agy", "--legacy-cli"]
                     start = time.monotonic()
@@ -823,7 +823,7 @@ class BrokerTests(unittest.TestCase):
                  mock.patch.object(route, "record_conversation_usage", wraps=route.record_conversation_usage) as record:
                 broker.atomic_json(route.AGY_CONVERSATIONS_PATH, {"old-session": {"in": 500, "out": 100, "total": 600, "cached": 30}})
                 code = writer.main(["--cwd", self.cwd, "--model", "model", "--agy", "--continue", "old-session",
-                                    "--log", self.base + ".json", "--ask", "never"])
+                                    "--log", self.base + ".json", "--ask", "never", "Carry on"])
             self.assertEqual(code, 0)
             self.assertEqual(record.call_args.args[1]["total"], 720)
             with open(route.JOURNAL_PATH) as handle:
